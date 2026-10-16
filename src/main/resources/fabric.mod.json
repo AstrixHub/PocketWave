@@ -7,7 +7,7 @@
 	"authors": [
 		"PocketWave"
 	],
-	"license": "MIT",
+	"license": "All Rights Reserved",
 	"icon": "assets/pocketwave/icon.png",
 	"environment": "client",
 	"entrypoints": {
