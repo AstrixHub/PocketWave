@@ -14,6 +14,7 @@ final class MusicKeybinds {
 	private static KeyMapping volumeUp;
 	private static KeyMapping volumeDown;
 	private static KeyMapping stop;
+	private static KeyMapping loop;
 
 	private MusicKeybinds() {
 	}
@@ -46,6 +47,12 @@ final class MusicKeybinds {
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
+		loop = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.pocketwave.loop",
+				InputConstants.Type.KEYSYM,
+				InputConstants.UNKNOWN.getValue(),
+				category
+		));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (pauseResume.consumeClick()) {
@@ -59,6 +66,9 @@ final class MusicKeybinds {
 			}
 			while (stop.consumeClick()) {
 				MusicController.INSTANCE.stop();
+			}
+			while (loop.consumeClick()) {
+				MusicController.INSTANCE.toggleLoop();
 			}
 		});
 	}

@@ -3,5 +3,6 @@
 	"key.pocketwave.pause_resume": "Pause/Resume",
 	"key.pocketwave.volume_up": "Volume Up",
 	"key.pocketwave.volume_down": "Volume Down",
-	"key.pocketwave.stop": "Stop"
+	"key.pocketwave.stop": "Stop",
+	"key.pocketwave.loop": "Toggle Loop"
 }

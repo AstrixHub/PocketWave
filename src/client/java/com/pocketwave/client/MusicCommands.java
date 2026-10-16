@@ -51,6 +51,12 @@ final class MusicCommands {
 						return 1;
 					}));
 
+			root.then(ClientCommands.literal("loop")
+					.executes(ctx -> {
+						MusicController.INSTANCE.toggleLoop();
+						return 1;
+					}));
+
 			root.then(ClientCommands.literal("volup")
 					.executes(ctx -> {
 						MusicController.INSTANCE.volumeUp();

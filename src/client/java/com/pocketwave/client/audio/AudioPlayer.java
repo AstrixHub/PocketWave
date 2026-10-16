@@ -26,6 +26,7 @@ public final class AudioPlayer {
 	private Clip clip;
 	private float volume = 1.0f;
 	private boolean paused;
+	private boolean looping;
 
 	public synchronized void play(Path wavFile) throws UnsupportedAudioFileException, IOException, LineUnavailableException {
 		stopInternal(false);
@@ -51,7 +52,7 @@ public final class AudioPlayer {
 			newClip.open(playStream);
 			this.clip = newClip;
 			applyVolume();
-			newClip.start();
+			startPlayback();
 			paused = false;
 		}
 	}
@@ -65,7 +66,7 @@ public final class AudioPlayer {
 
 	public synchronized void resume() {
 		if (clip != null && paused) {
-			clip.start();
+			startPlayback();
 			paused = false;
 		}
 	}
@@ -115,6 +116,25 @@ public final class AudioPlayer {
 		return clip != null;
 	}
 
+	public synchronized boolean isLooping() {
+		return looping;
+	}
+
+	/**
+	 * Enables or disables continuous loop of the current clip.
+	 *
+	 * @return the new looping state
+	 */
+	public synchronized boolean setLooping(boolean looping) {
+		this.looping = looping;
+		applyLooping();
+		return this.looping;
+	}
+
+	public synchronized boolean toggleLooping() {
+		return setLooping(!looping);
+	}
+
 	public synchronized float getVolume() {
 		return volume;
 	}
@@ -126,6 +146,29 @@ public final class AudioPlayer {
 
 	public synchronized void adjustVolume(float delta) {
 		setVolume(volume + delta);
+	}
+
+	private void startPlayback() {
+		if (clip == null) {
+			return;
+		}
+		if (looping) {
+			clip.loop(Clip.LOOP_CONTINUOUSLY);
+		} else {
+			clip.loop(0);
+			clip.start();
+		}
+	}
+
+	private void applyLooping() {
+		if (clip == null || paused) {
+			return;
+		}
+		if (looping) {
+			clip.loop(Clip.LOOP_CONTINUOUSLY);
+		} else {
+			clip.loop(0);
+		}
 	}
 
 	private void applyVolume() {

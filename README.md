@@ -32,6 +32,7 @@ All commands are client-side:
 | `/music local <path>` | Play a local file (absolute or relative to the game directory) |
 | `/music pause` / `/music resume` | Pause or resume |
 | `/music stop` | Stop playback |
+| `/music loop` | Toggle looping the current song |
 | `/music volup` / `/music voldown` | Volume ±10% |
 | `/music volume <0-100>` | Set volume |
 | `/music now` | Show current track / status |
@@ -52,6 +53,7 @@ Open **Options → Controls → PocketWave**. All are **unbound by default**:
 - Volume Up
 - Volume Down
 - Stop
+- Toggle Loop
 
 ## HUD
 

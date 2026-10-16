@@ -125,6 +125,11 @@ public final class MusicController {
 		ChatFeedback.info("Stopped.");
 	}
 
+	public void toggleLoop() {
+		boolean looping = player.toggleLooping();
+		ChatFeedback.info(looping ? "Loop enabled." : "Loop disabled.");
+	}
+
 	public void volumeUp() {
 		player.adjustVolume(VOLUME_STEP);
 		ChatFeedback.info("Volume: " + percent() + "%");
@@ -154,7 +159,8 @@ public final class MusicController {
 
 		String state = player.isPaused() ? "Paused" : (player.isPlaying() ? "Playing" : "Stopped");
 		String title = currentTitle == null ? "Unknown" : currentTitle;
-		ChatFeedback.info(state + ": " + title + " (" + percent() + "%)");
+		String loop = player.isLooping() ? ", loop on" : "";
+		ChatFeedback.info(state + ": " + title + " (" + percent() + "%" + loop + ")");
 	}
 
 	/** Visible while a track is loaded (playing or paused) or still fetching. */
@@ -175,7 +181,14 @@ public final class MusicController {
 			return "Loading...";
 		}
 		String title = currentTitle == null ? "Unknown" : currentTitle;
-		return player.isPaused() ? title + "  ·  paused" : title;
+		StringBuilder label = new StringBuilder(title);
+		if (player.isPaused()) {
+			label.append("  ·  paused");
+		}
+		if (player.isLooping()) {
+			label.append("  ·  loop");
+		}
+		return label.toString();
 	}
 
 	public void shutdown() {
