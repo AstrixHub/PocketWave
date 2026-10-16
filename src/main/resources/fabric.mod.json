@@ -1,0 +1,24 @@
+{
+	"schemaVersion": 1,
+	"id": "pocketwave",
+	"version": "${version}",
+	"name": "PocketWave",
+	"description": "Play YouTube, YouTube Music, and other yt-dlp-supported audio (plus local files) in-game with /music commands and keybinds. Bundles yt-dlp; client-only; no login required.",
+	"authors": [
+		"PocketWave"
+	],
+	"license": "MIT",
+	"icon": "assets/pocketwave/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.pocketwave.client.PocketWaveClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

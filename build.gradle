@@ -1,0 +1,159 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+version = project.version
+group = project.group
+
+base {
+	archivesName = 'pocketwave'
+}
+
+repositories {
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"pocketwave" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+def nativesDir = layout.buildDirectory.dir("natives")
+def ytDlpRelease = "2026.08.19"
+def maxJarBytes = 100L * 1024L * 1024L
+
+tasks.register("downloadNatives") {
+	description = "Download and gzip yt-dlp binaries for bundling (keeps jar under 100MB; ffmpeg is fetched at runtime)."
+	outputs.dir(nativesDir)
+
+	doLast {
+		def out = nativesDir.get().asFile
+		def ytDir = new File(out, "yt-dlp")
+		ytDir.mkdirs()
+
+		def downloads = [
+				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp.exe", new File(ytDir, "windows-x64.exe.gz")],
+				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp_linux", new File(ytDir, "linux-x64.gz")],
+				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp_macos", new File(ytDir, "macos.gz")]
+		]
+
+		downloads.each { entry ->
+			def url = entry[0] as String
+			def dest = entry[1] as File
+			if (dest.exists() && dest.length() > 1_000_000) {
+				logger.lifecycle("Reusing cached native: ${dest.name}")
+				return
+			}
+
+			logger.lifecycle("Downloading ${url}")
+			def tmpRaw = File.createTempFile("smp-native-", ".bin")
+			def tmpGz = File.createTempFile("smp-native-", ".gz")
+			try {
+				URI.create(url).toURL().withInputStream { input ->
+					tmpRaw.withOutputStream { output -> output << input }
+				}
+
+				tmpRaw.withInputStream { input ->
+					tmpGz.withOutputStream { output ->
+						def gzip = new java.util.zip.GZIPOutputStream(output)
+						gzip << input
+						gzip.finish()
+					}
+				}
+
+				dest.parentFile.mkdirs()
+				java.nio.file.Files.move(
+						tmpGz.toPath(),
+						dest.toPath(),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING
+				)
+			} finally {
+				tmpRaw.delete()
+				tmpGz.delete()
+			}
+		}
+
+		def total = 0L
+		ytDir.eachFileRecurse { file ->
+			if (file.isFile()) {
+				total += file.length()
+			}
+		}
+		logger.lifecycle(String.format("Bundled yt-dlp natives: %.1f MB", total / (1024.0 * 1024.0)))
+		if (total > maxJarBytes) {
+			throw new GradleException("Bundled natives alone exceed 100MB (${total} bytes).")
+		}
+	}
+}
+
+processResources {
+	dependsOn downloadNatives
+
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+
+	from(nativesDir) {
+		into "natives"
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName" }
+	}
+
+	doLast {
+		def jarFile = archiveFile.get().asFile
+		def size = jarFile.length()
+		logger.lifecycle(String.format("Mod jar size: %.1f MB (%s)", size / (1024.0 * 1024.0), jarFile.name))
+		if (size > maxJarBytes) {
+			throw new GradleException("Mod jar exceeds 100MB limit (${size} bytes).")
+		}
+	}
+}
+
+// Natives are large; keep them out of the sources jar.
+tasks.named("sourcesJar", Jar).configure {
+	exclude("natives/**")
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	repositories {
+	}
+}
