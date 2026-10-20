@@ -19,7 +19,7 @@ final class ChatFeedback {
 		Minecraft client = Minecraft.getInstance();
 		Runnable task = () -> {
 			if (client.player != null) {
-				client.player.sendSystemMessage(component);
+				client.player.displayClientMessage(component, false);
 			}
 		};
 

@@ -5,7 +5,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 
 import com.pocketwave.PocketWave;
 
@@ -24,37 +24,37 @@ final class MusicKeybinds {
 		KeyMapping.Category category = KeyMapping.Category.register(PocketWave.id("music"));
 
 		// Unbound by default (UNKNOWN / -1).
-		pauseResume = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		pauseResume = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.pocketwave.pause_resume",
 				InputConstants.Type.KEYSYM,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
-		volumeUp = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		volumeUp = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.pocketwave.volume_up",
 				InputConstants.Type.KEYSYM,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
-		volumeDown = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		volumeDown = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.pocketwave.volume_down",
 				InputConstants.Type.KEYSYM,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
-		stop = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		stop = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.pocketwave.stop",
 				InputConstants.Type.KEYSYM,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
-		loop = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		loop = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.pocketwave.loop",
 				InputConstants.Type.KEYSYM,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
-		showQueue = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+		showQueue = KeyBindingHelper.registerKeyBinding(new KeyMapping(
 				"key.pocketwave.show_queue",
 				InputConstants.Type.KEYSYM,
 				InputConstants.UNKNOWN.getValue(),

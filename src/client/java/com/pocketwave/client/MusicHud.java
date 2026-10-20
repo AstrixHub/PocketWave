@@ -3,7 +3,7 @@ package com.pocketwave.client;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.CommonColors;
@@ -43,11 +43,11 @@ final class MusicHud {
 		HudElementRegistry.attachElementAfter(
 				VanillaHudElements.MISC_OVERLAYS,
 				PocketWave.id("now_playing"),
-				MusicHud::extract
+				MusicHud::render
 		);
 	}
 
-	private static void extract(GuiGraphicsExtractor graphics, DeltaTracker deltaTracker) {
+	private static void render(GuiGraphics graphics, DeltaTracker deltaTracker) {
 		MusicController music = MusicController.INSTANCE;
 		if (!music.shouldShowHud()) {
 			return;
@@ -73,7 +73,7 @@ final class MusicHud {
 
 		int textX = x + PAD;
 		int textY = y + PAD;
-		graphics.text(font, label, textX, textY, paused ? PAUSED_COLOR : TITLE_COLOR, true);
+		graphics.drawString(font, label, textX, textY, paused ? PAUSED_COLOR : TITLE_COLOR, true);
 
 		int barX = textX;
 		int barY = textY + font.lineHeight + BAR_GAP;
@@ -82,7 +82,7 @@ final class MusicHud {
 		if (showStatus) {
 			int statusY = barY + BAR_HEIGHT + STATUS_GAP;
 			String statusLabel = ellipsize(font, status, CONTENT_WIDTH);
-			graphics.text(font, statusLabel, textX, statusY, looping || paused ? STATUS_COLOR : STATUS_DIM, true);
+			graphics.drawString(font, statusLabel, textX, statusY, looping || paused ? STATUS_COLOR : STATUS_DIM, true);
 		}
 	}
 
@@ -90,7 +90,7 @@ final class MusicHud {
 	 * Stretch the full XP sprites so both end caps stay rounded.
 	 * Partial volume scissors the stretched progress (flat mid cut, like vanilla XP).
 	 */
-	private static void drawXpVolumeBar(GuiGraphicsExtractor graphics, int x, int y, int barWidth, int volumePercent) {
+	private static void drawXpVolumeBar(GuiGraphics graphics, int x, int y, int barWidth, int volumePercent) {
 		int fillWidth = Math.round(barWidth * (Math.max(0, Math.min(100, volumePercent)) / 100f));
 
 		graphics.blitSprite(RenderPipelines.GUI_TEXTURED, XP_BAR_BACKGROUND, x, y, barWidth, BAR_HEIGHT);

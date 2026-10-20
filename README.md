@@ -1,15 +1,15 @@
 # PocketWave
 
-Client-only Fabric mod for **Minecraft 26.2** that plays audio from YouTube, YouTube Music, and other [yt-dlp](https://github.com/yt-dlp/yt-dlp)-supported sites, plus local files. No account login is required. Spotify is not supported (DRM / login).
+Client-only Fabric mod for **Minecraft 1.21.11** that plays audio from YouTube, YouTube Music, and other [yt-dlp](https://github.com/yt-dlp/yt-dlp)-supported sites, plus local files. No account login is required. Spotify is not supported (DRM / login).
 
 Only you hear the music — it works in singleplayer and on multiplayer servers without a server-side mod.
 
 ## Requirements
 
-- Minecraft **26.2**
+- Minecraft **1.21.11**
 - Fabric Loader **0.19.5+**
-- [Fabric API](https://modrinth.com/mod/fabric-api) for 26.2
-- Java **25+** (for building)
+- [Fabric API](https://modrinth.com/mod/fabric-api) for 1.21.11
+- Java **21+** (for building)
 - Internet on first play if `ffmpeg` is not already installed (one-time ~20–30MB download)
 
 **You do not need to install yt-dlp yourself.** A copy for Windows, macOS, and Linux is bundled in the mod (kept under 100MB total). If `yt-dlp` / `ffmpeg` are already on your `PATH`, those are used instead.
@@ -20,7 +20,7 @@ Only you hear the music — it works in singleplayer and on multiplayer servers 
 ./gradlew build
 ```
 
-The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.3.jar` and must stay under **100MB**.
+The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.1.0.jar` and must stay under **100MB**.
 
 ## Commands
 
