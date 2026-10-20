@@ -20,7 +20,7 @@ Only you hear the music — it works in singleplayer and on multiplayer servers 
 ./gradlew build
 ```
 
-The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.0.jar` and must stay under **100MB**.
+The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.3.jar` and must stay under **100MB**.
 
 ## Commands
 
@@ -33,6 +33,9 @@ All commands are client-side:
 | `/music pause` / `/music resume` | Pause or resume |
 | `/music stop` | Stop playback |
 | `/music loop` | Toggle looping the current song |
+| `/music queue <url\|search>` | Queue a song to play next (plays now if idle) |
+| `/music queue` | List the queue |
+| `/music queue clear` | Clear the queue |
 | `/music volup` / `/music voldown` | Volume ±10% |
 | `/music volume <0-100>` | Set volume |
 | `/music now` | Show current track / status |
@@ -54,17 +57,19 @@ Open **Options → Controls → PocketWave**. All are **unbound by default**:
 - Volume Down
 - Stop
 - Toggle Loop
+- Show Queue (prints the queue in chat)
 
 ## HUD
 
-While a track is playing or paused (or loading), a small widget appears in the **top-left**: song title and a thin volume bar. It stays out of the crosshair/hotbar area and hides with the rest of the HUD (F1).
+While a track is playing or paused (or loading), a small widget appears in the **top-left**: a short ellipsized title, a vanilla XP-styled volume bar (rounded ends), and a status line for paused / loop / queue count. It hides when playback ends (or with F1), and auto-advances through the queue.
 
 ## How it works
 
 1. Bundled (or system) `yt-dlp` downloads the best audio stream (no cookies / login by default).
-2. `ffmpeg` converts it to a temporary WAV under `.minecraft/pocketwave/cache/`.
-3. If `ffmpeg` is not on your PATH, the mod downloads it once into `.minecraft/pocketwave/bin/` (bundling ffmpeg for every OS would exceed the 100MB jar limit).
-4. Java Sound plays the WAV (separate from Minecraft’s volume sliders).
+2. `ffmpeg` converts it to a temporary WAV under `.minecraft/pocketwave/cache/` (deleted when the track finishes or is discarded — not kept permanently).
+3. Queued songs **preload** in the background so the next track can start with little/no gap.
+4. If `ffmpeg` is not on your PATH, the mod downloads it once into `<game dir>/pocketwave/bin/` (for vanilla that’s `.minecraft/pocketwave/bin/ffmpeg`; launcher instances use their own instance folder). That copy is reused after the first successful download.
+5. Java Sound plays the WAV (separate from Minecraft’s volume sliders).
 
 ## Troubleshooting
 

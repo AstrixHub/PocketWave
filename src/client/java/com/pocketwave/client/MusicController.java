@@ -1,6 +1,10 @@
 package com.pocketwave.client;
 
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -12,23 +16,31 @@ import com.pocketwave.client.audio.LocalFileService;
 import com.pocketwave.client.audio.YtDlpService;
 
 /**
- * Coordinates async fetch/convert and playback.
+ * Coordinates async fetch/convert, playback, and a preloaded upcoming queue.
+ * Temp WAVs live under the game dir cache and are deleted when finished/discarded.
  */
 public final class MusicController {
 	public static final MusicController INSTANCE = new MusicController();
 
 	private static final float VOLUME_STEP = 0.10f;
+	private static final int MAX_QUEUE = 25;
 
 	private final AudioPlayer player = new AudioPlayer();
 	private final YtDlpService ytDlp = new YtDlpService();
 	private final LocalFileService localFiles = new LocalFileService();
-	private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-		Thread t = new Thread(r, "pocketwave");
+	private final ExecutorService playExecutor = Executors.newSingleThreadExecutor(r -> {
+		Thread t = new Thread(r, "pocketwave-play");
+		t.setDaemon(true);
+		return t;
+	});
+	private final ExecutorService preloadExecutor = Executors.newFixedThreadPool(2, r -> {
+		Thread t = new Thread(r, "pocketwave-preload");
 		t.setDaemon(true);
 		return t;
 	});
 
 	private final AtomicInteger jobEpoch = new AtomicInteger();
+	private final Deque<QueuedItem> queue = new ArrayDeque<>();
 	private Future<?> currentJob;
 	private Path currentWorkDir;
 	private String currentTitle;
@@ -45,6 +57,134 @@ public final class MusicController {
 		startJob("Loading local file...", status -> localFiles.prepare(path, status));
 	}
 
+	public void queueQuery(String queryOrUrl) {
+		String trimmed = queryOrUrl.trim();
+		if (trimmed.isEmpty()) {
+			ChatFeedback.error("Usage: /music queue <url|search terms>");
+			return;
+		}
+
+		if (!loading && !player.hasTrack()) {
+			playQuery(trimmed);
+			return;
+		}
+
+		QueuedItem item;
+		synchronized (queue) {
+			if (queue.size() >= MAX_QUEUE) {
+				ChatFeedback.error("Queue is full (" + MAX_QUEUE + ").");
+				return;
+			}
+			item = new QueuedItem(QueuedItem.Kind.QUERY, trimmed);
+			queue.addLast(item);
+			ChatFeedback.info("Queued (#" + queue.size() + "): " + trimmed);
+		}
+		startPreload(item);
+	}
+
+	public void showQueue() {
+		List<QueuedItem> snapshot;
+		synchronized (queue) {
+			snapshot = new ArrayList<>(queue);
+		}
+
+		if (snapshot.isEmpty()) {
+			ChatFeedback.info("Queue is empty.");
+			return;
+		}
+
+		ChatFeedback.info("Queue (" + snapshot.size() + "):");
+		for (int i = 0; i < snapshot.size(); i++) {
+			ChatFeedback.info("  " + (i + 1) + ". " + snapshot.get(i).display());
+		}
+	}
+
+	public void clearQueue() {
+		discardQueue();
+		ChatFeedback.info("Queue cleared.");
+	}
+
+	public int queueSize() {
+		synchronized (queue) {
+			return queue.size();
+		}
+	}
+
+	/** Called each client tick to advance when a track ends. */
+	public void tick() {
+		if (loading) {
+			return;
+		}
+		if (player.hasFinished()) {
+			onTrackEnded();
+		}
+	}
+
+	private void onTrackEnded() {
+		player.stop();
+		cleanupWorkDir();
+		currentTitle = null;
+		playNextFromQueue();
+	}
+
+	private void playNextFromQueue() {
+		QueuedItem next;
+		synchronized (queue) {
+			next = queue.pollFirst();
+		}
+		if (next == null) {
+			return;
+		}
+
+		YtDlpService.PreparedTrack ready = next.takePrepared();
+		if (ready != null) {
+			ChatFeedback.info("Playing next: " + ready.title());
+			playPrepared(ready);
+			return;
+		}
+
+		// Not ready yet — finish preload (or fetch) on the play thread, then start immediately.
+		startJob("Loading next...", status -> next.awaitOrFetch(ytDlp, localFiles));
+	}
+
+	private void playPrepared(YtDlpService.PreparedTrack track) {
+		jobEpoch.incrementAndGet();
+		cancelJob();
+		player.stop();
+		cleanupWorkDir();
+
+		try {
+			currentWorkDir = track.workDir();
+			currentTitle = track.title();
+			player.play(track.wavFile());
+			loading = false;
+		} catch (Exception e) {
+			loading = false;
+			currentTitle = null;
+			YtDlpService.deleteQuietly(track.workDir());
+			PocketWave.LOGGER.error("Failed to play preloaded track", e);
+			ChatFeedback.error(ChatFeedback.friendlyError(e.getMessage()));
+			playNextFromQueue();
+		}
+	}
+
+	private void startPreload(QueuedItem item) {
+		item.preloadFuture = preloadExecutor.submit(() -> {
+			try {
+				YtDlpService.PreparedTrack track = switch (item.kind()) {
+					case QUERY -> ytDlp.prepare(item.value(), msg -> {
+					});
+					case LOCAL -> localFiles.prepare(item.value(), msg -> {
+					});
+				};
+				item.complete(track);
+			} catch (Exception e) {
+				item.fail(e.getMessage());
+				PocketWave.LOGGER.warn("Preload failed for {}: {}", item.value(), e.toString());
+			}
+		});
+	}
+
 	private void startJob(String startMessage, TrackSupplier supplier) {
 		int epoch = jobEpoch.incrementAndGet();
 		cancelJob();
@@ -54,7 +194,7 @@ public final class MusicController {
 		loading = true;
 		ChatFeedback.info(startMessage);
 
-		currentJob = executor.submit(() -> {
+		currentJob = playExecutor.submit(() -> {
 			try {
 				YtDlpService.PreparedTrack track = supplier.get(ChatFeedback::info);
 				if (epoch != jobEpoch.get()) {
@@ -72,12 +212,14 @@ public final class MusicController {
 					return;
 				}
 				loading = false;
+				currentTitle = null;
 				PocketWave.LOGGER.error("Failed to play music", e);
 				String message = e.getMessage();
 				if ((message == null || message.isBlank()) && e.getCause() != null) {
 					message = e.getCause().getMessage();
 				}
 				ChatFeedback.error(ChatFeedback.friendlyError(message));
+				playNextFromQueue();
 			}
 		});
 	}
@@ -160,7 +302,9 @@ public final class MusicController {
 		String state = player.isPaused() ? "Paused" : (player.isPlaying() ? "Playing" : "Stopped");
 		String title = currentTitle == null ? "Unknown" : currentTitle;
 		String loop = player.isLooping() ? ", loop on" : "";
-		ChatFeedback.info(state + ": " + title + " (" + percent() + "%" + loop + ")");
+		int queued = queueSize();
+		String queuedLabel = queued > 0 ? ", +" + queued + " queued" : "";
+		ChatFeedback.info(state + ": " + title + " (" + percent() + "%" + loop + queuedLabel + ")");
 	}
 
 	/** Visible while a track is loaded (playing or paused) or still fetching. */
@@ -172,6 +316,10 @@ public final class MusicController {
 		return player.isPaused();
 	}
 
+	public boolean isLooping() {
+		return player.isLooping();
+	}
+
 	public int getVolumePercent() {
 		return percent();
 	}
@@ -180,15 +328,7 @@ public final class MusicController {
 		if (loading) {
 			return "Loading...";
 		}
-		String title = currentTitle == null ? "Unknown" : currentTitle;
-		StringBuilder label = new StringBuilder(title);
-		if (player.isPaused()) {
-			label.append("  ·  paused");
-		}
-		if (player.isLooping()) {
-			label.append("  ·  loop");
-		}
-		return label.toString();
+		return currentTitle == null ? "Unknown" : currentTitle;
 	}
 
 	public void shutdown() {
@@ -196,7 +336,20 @@ public final class MusicController {
 		cancelJob();
 		player.stop();
 		cleanupWorkDir();
-		executor.shutdownNow();
+		discardQueue();
+		playExecutor.shutdownNow();
+		preloadExecutor.shutdownNow();
+	}
+
+	private void discardQueue() {
+		List<QueuedItem> discarded;
+		synchronized (queue) {
+			discarded = new ArrayList<>(queue);
+			queue.clear();
+		}
+		for (QueuedItem item : discarded) {
+			item.discard();
+		}
 	}
 
 	private int percent() {
@@ -213,6 +366,114 @@ public final class MusicController {
 	private void cleanupWorkDir() {
 		YtDlpService.deleteQuietly(currentWorkDir);
 		currentWorkDir = null;
+	}
+
+	private static final class QueuedItem {
+		enum Kind {
+			QUERY,
+			LOCAL
+		}
+
+		private final Kind kind;
+		private final String value;
+		private final Object lock = new Object();
+		private Future<?> preloadFuture;
+		private YtDlpService.PreparedTrack prepared;
+		private String error;
+		private boolean done;
+
+		QueuedItem(Kind kind, String value) {
+			this.kind = kind;
+			this.value = value;
+		}
+
+		Kind kind() {
+			return kind;
+		}
+
+		String value() {
+			return value;
+		}
+
+		String display() {
+			synchronized (lock) {
+				if (prepared != null) {
+					return prepared.title() + " (ready)";
+				}
+				if (error != null) {
+					return value + " (failed)";
+				}
+				if (preloadFuture != null && !done) {
+					return value + " (loading)";
+				}
+				return value;
+			}
+		}
+
+		void complete(YtDlpService.PreparedTrack track) {
+			synchronized (lock) {
+				prepared = track;
+				done = true;
+				lock.notifyAll();
+			}
+		}
+
+		void fail(String message) {
+			synchronized (lock) {
+				error = message == null ? "error" : message;
+				done = true;
+				lock.notifyAll();
+			}
+		}
+
+		YtDlpService.PreparedTrack takePrepared() {
+			synchronized (lock) {
+				YtDlpService.PreparedTrack track = prepared;
+				prepared = null;
+				return track;
+			}
+		}
+
+		/**
+		 * Waits for an in-flight preload, or fetches now if preload never started / failed.
+		 */
+		YtDlpService.PreparedTrack awaitOrFetch(YtDlpService ytDlp, LocalFileService localFiles) throws Exception {
+			synchronized (lock) {
+				while (!done && preloadFuture != null) {
+					lock.wait(200);
+				}
+				if (prepared != null) {
+					YtDlpService.PreparedTrack track = prepared;
+					prepared = null;
+					return track;
+				}
+			}
+
+			return switch (kind) {
+				case QUERY -> ytDlp.prepare(value, msg -> {
+				});
+				case LOCAL -> localFiles.prepare(value, msg -> {
+				});
+			};
+		}
+
+		void discard() {
+			Future<?> future;
+			YtDlpService.PreparedTrack track;
+			synchronized (lock) {
+				future = preloadFuture;
+				track = prepared;
+				prepared = null;
+				done = true;
+				lock.notifyAll();
+			}
+			if (future != null) {
+				future.cancel(true);
+			}
+			if (track != null) {
+				YtDlpService.deleteQuietly(track.workDir());
+			}
+		}
 	}
 
 	@FunctionalInterface

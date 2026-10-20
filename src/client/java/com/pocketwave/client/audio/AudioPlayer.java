@@ -116,6 +116,23 @@ public final class AudioPlayer {
 		return clip != null;
 	}
 
+	/**
+	 * True when the clip reached its natural end (not paused, not looping, not manually stopped).
+	 */
+	public synchronized boolean hasFinished() {
+		if (clip == null || paused || looping) {
+			return false;
+		}
+		if (clip.isRunning()) {
+			return false;
+		}
+		long length = clip.getFrameLength();
+		if (length <= 0) {
+			return false;
+		}
+		return clip.getFramePosition() >= length - 1;
+	}
+
 	public synchronized boolean isLooping() {
 		return looping;
 	}

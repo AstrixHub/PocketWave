@@ -57,6 +57,23 @@ final class MusicCommands {
 						return 1;
 					}));
 
+			root.then(ClientCommands.literal("queue")
+					.executes(ctx -> {
+						MusicController.INSTANCE.showQueue();
+						return 1;
+					})
+					.then(ClientCommands.literal("clear")
+							.executes(ctx -> {
+								MusicController.INSTANCE.clearQueue();
+								return 1;
+							}))
+					.then(ClientCommands.argument("query", StringArgumentType.greedyString())
+							.executes(ctx -> {
+								String query = StringArgumentType.getString(ctx, "query");
+								MusicController.INSTANCE.queueQuery(query);
+								return 1;
+							})));
+
 			root.then(ClientCommands.literal("volup")
 					.executes(ctx -> {
 						MusicController.INSTANCE.volumeUp();

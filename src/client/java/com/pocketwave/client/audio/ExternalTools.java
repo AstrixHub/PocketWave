@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -25,8 +27,6 @@ import com.pocketwave.PocketWave;
  */
 public final class ExternalTools {
 	private static final Object LOCK = new Object();
-	private static final String BUNDLE_MARKER = "bundle-version.txt";
-	private static final String BUNDLE_VERSION = "1";
 
 	private static Path cachedYtDlp;
 	private static Path cachedFfmpeg;
@@ -36,7 +36,7 @@ public final class ExternalTools {
 
 	public static Path ytDlp(Consumer<String> status) throws IOException {
 		synchronized (LOCK) {
-			if (cachedYtDlp != null && Files.isRegularFile(cachedYtDlp)) {
+			if (isWorkingTool(cachedYtDlp)) {
 				return cachedYtDlp;
 			}
 
@@ -46,14 +46,23 @@ public final class ExternalTools {
 				return cachedYtDlp;
 			}
 
+			Platform platform = Platform.detect();
+			Path target = binDir().resolve(platform.ytDlpFileName);
+			if (isWorkingTool(target)) {
+				cachedYtDlp = target;
+				return cachedYtDlp;
+			}
+
 			if (status != null) {
 				status.accept("Extracting bundled yt-dlp...");
 			}
 
-			Platform platform = Platform.detect();
-			Path target = binDir().resolve(platform.ytDlpFileName);
 			extractGzipResource(platform.ytDlpResource, target);
 			makeExecutable(target);
+			if (!isWorkingTool(target)) {
+				throw new IOException("Bundled yt-dlp could not be started from " + target);
+			}
+
 			cachedYtDlp = target;
 			return cachedYtDlp;
 		}
@@ -61,7 +70,7 @@ public final class ExternalTools {
 
 	public static Path ffmpeg(Consumer<String> status) throws IOException {
 		synchronized (LOCK) {
-			if (cachedFfmpeg != null && Files.isRegularFile(cachedFfmpeg)) {
+			if (isWorkingTool(cachedFfmpeg)) {
 				return cachedFfmpeg;
 			}
 
@@ -73,8 +82,7 @@ public final class ExternalTools {
 
 			Platform platform = Platform.detect();
 			Path target = binDir().resolve(platform.ffmpegFileName);
-			if (Files.isRegularFile(target) && Files.size(target) > 1_000_000) {
-				makeExecutable(target);
+			if (isWorkingTool(target)) {
 				cachedFfmpeg = target;
 				return cachedFfmpeg;
 			}
@@ -85,23 +93,37 @@ public final class ExternalTools {
 
 			downloadGzip(platform.ffmpegUrl, target);
 			makeExecutable(target);
+			if (!isWorkingTool(target)) {
+				Files.deleteIfExists(target);
+				throw new IOException("Failed to download ffmpeg. Check your internet connection, or install ffmpeg on your PATH.");
+			}
+
 			cachedFfmpeg = target;
 			return cachedFfmpeg;
 		}
 	}
 
-	private static Path binDir() throws IOException {
+	public static Path binDir() throws IOException {
 		Path dir = Minecraft.getInstance().gameDirectory.toPath()
 				.resolve(PocketWave.MOD_ID)
 				.resolve("bin");
 		Files.createDirectories(dir);
-
-		Path marker = dir.resolve(BUNDLE_MARKER);
-		if (!Files.isRegularFile(marker) || !BUNDLE_VERSION.equals(Files.readString(marker).trim())) {
-			Files.writeString(marker, BUNDLE_VERSION);
-		}
-
 		return dir;
+	}
+
+	private static boolean isWorkingTool(Path path) {
+		if (path == null || !Files.isRegularFile(path)) {
+			return false;
+		}
+		try {
+			if (Files.size(path) < 100_000) {
+				return false;
+			}
+		} catch (IOException e) {
+			return false;
+		}
+		makeExecutable(path);
+		return ProcessUtil.commandAvailable(path.toString());
 	}
 
 	private static void extractGzipResource(String resourcePath, Path target) throws IOException {
@@ -145,35 +167,49 @@ public final class ExternalTools {
 	}
 
 	private static Path findOnPath(String unixName, String windowsName) {
-		String pathEnv = System.getenv("PATH");
-		if (pathEnv == null || pathEnv.isBlank()) {
-			return null;
-		}
-
 		boolean windows = Platform.isWindows();
 		String wanted = windows ? windowsName : unixName;
-		String[] parts = pathEnv.split(windows ? ";" : ":");
 
-		for (String part : parts) {
-			if (part.isBlank()) {
-				continue;
-			}
-			Path candidate = Path.of(part.trim(), wanted);
-			if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
-				return candidate;
-			}
-			// Windows may not mark execute bit the same way
-			if (windows && Files.isRegularFile(candidate)) {
+		for (Path dir : toolSearchDirs(windows)) {
+			Path candidate = dir.resolve(wanted);
+			if (isWorkingTool(candidate)) {
 				return candidate;
 			}
 		}
 
-		// Last resort: let the OS resolve via ProcessBuilder (covers aliases / app bundles)
-		if (ProcessUtil.commandAvailable(unixName) || (windows && ProcessUtil.commandAvailable(windowsName))) {
-			return Path.of(windows ? windowsName : unixName);
+		if (ProcessUtil.commandAvailable(unixName)) {
+			return Path.of(unixName);
+		}
+		if (windows && ProcessUtil.commandAvailable(windowsName)) {
+			return Path.of(windowsName);
 		}
 
 		return null;
+	}
+
+	private static List<Path> toolSearchDirs(boolean windows) {
+		List<Path> dirs = new ArrayList<>();
+		String pathEnv = System.getenv("PATH");
+		if (pathEnv != null && !pathEnv.isBlank()) {
+			for (String part : pathEnv.split(windows ? ";" : ":")) {
+				if (!part.isBlank()) {
+					dirs.add(Path.of(part.trim()));
+				}
+			}
+		}
+
+		// Minecraft launchers often strip Homebrew / local PATH entries.
+		if (!windows) {
+			String home = System.getProperty("user.home", "");
+			dirs.add(Path.of("/opt/homebrew/bin"));
+			dirs.add(Path.of("/usr/local/bin"));
+			dirs.add(Path.of("/opt/local/bin"));
+			if (!home.isBlank()) {
+				dirs.add(Path.of(home, ".local", "bin"));
+			}
+		}
+
+		return dirs;
 	}
 
 	private static void makeExecutable(Path path) {
