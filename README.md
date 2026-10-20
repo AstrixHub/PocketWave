@@ -20,7 +20,7 @@ Only you hear the music — it works in singleplayer and on multiplayer servers 
 ./gradlew build
 ```
 
-The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.3.jar` and must stay under **100MB**.
+The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.2.jar` and must stay under **100MB**.
 
 ## Commands
 
