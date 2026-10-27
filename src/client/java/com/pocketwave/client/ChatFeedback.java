@@ -3,15 +3,15 @@ package com.pocketwave.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
-final class ChatFeedback {
+public final class ChatFeedback {
 	private ChatFeedback() {
 	}
 
-	static void info(String message) {
+	public static void info(String message) {
 		send(Component.literal("§a[PocketWave] §f" + message));
 	}
 
-	static void error(String message) {
+	public static void error(String message) {
 		send(Component.literal("§c[PocketWave] §f" + message));
 	}
 

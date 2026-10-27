@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 
 import com.pocketwave.PocketWave;
+import com.pocketwave.client.playlist.PlaylistScreens;
 
 final class MusicKeybinds {
 	private static KeyMapping pauseResume;
@@ -16,6 +17,7 @@ final class MusicKeybinds {
 	private static KeyMapping stop;
 	private static KeyMapping loop;
 	private static KeyMapping showQueue;
+	private static KeyMapping openPlaylists;
 
 	private MusicKeybinds() {
 	}
@@ -60,6 +62,12 @@ final class MusicKeybinds {
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
+		openPlaylists = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.pocketwave.open_playlists",
+				InputConstants.Type.KEYSYM,
+				InputConstants.UNKNOWN.getValue(),
+				category
+		));
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			MusicController.INSTANCE.tick();
@@ -81,6 +89,11 @@ final class MusicKeybinds {
 			}
 			while (showQueue.consumeClick()) {
 				MusicController.INSTANCE.showQueue();
+			}
+			while (openPlaylists.consumeClick()) {
+				if (client.gui.screen() == null) {
+					PlaylistScreens.open();
+				}
 			}
 		});
 	}

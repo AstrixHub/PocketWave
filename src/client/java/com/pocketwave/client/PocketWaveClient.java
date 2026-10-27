@@ -10,6 +10,7 @@ public class PocketWaveClient implements ClientModInitializer {
 		MusicCommands.register();
 		MusicKeybinds.register();
 		MusicHud.register();
+		MusicController.INSTANCE.applySavedVolume();
 
 		Runtime.getRuntime().addShutdownHook(new Thread(MusicController.INSTANCE::shutdown, "pocketwave-shutdown"));
 

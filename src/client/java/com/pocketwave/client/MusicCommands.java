@@ -8,6 +8,9 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 
+import com.pocketwave.client.playlist.PlaylistScreens;
+import com.pocketwave.client.settings.SettingsScreens;
+
 final class MusicCommands {
 	private MusicCommands() {
 	}
@@ -99,6 +102,24 @@ final class MusicCommands {
 						MusicController.INSTANCE.nowPlaying();
 						return 1;
 					}));
+
+			root.then(ClientCommands.literal("settings")
+					.executes(ctx -> {
+						SettingsScreens.open();
+						return 1;
+					}));
+
+			root.then(ClientCommands.literal("playlist")
+					.executes(ctx -> {
+						PlaylistScreens.open();
+						return 1;
+					})
+					.then(ClientCommands.argument("name", StringArgumentType.greedyString())
+							.executes(ctx -> {
+								String name = StringArgumentType.getString(ctx, "name");
+								MusicController.INSTANCE.playPlaylist(name);
+								return 1;
+							})));
 
 			dispatcher.register(root);
 		});

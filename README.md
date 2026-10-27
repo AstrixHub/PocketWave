@@ -20,7 +20,7 @@ Only you hear the music — it works in singleplayer and on multiplayer servers 
 ./gradlew build
 ```
 
-The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.2.jar` and must stay under **100MB**.
+The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.0.3.jar` and must stay under **100MB**.
 
 ## Commands
 
@@ -39,6 +39,9 @@ All commands are client-side:
 | `/music volup` / `/music voldown` | Volume ±10% |
 | `/music volume <0-100>` | Set volume |
 | `/music now` | Show current track / status |
+| `/music playlist` | Open the playlist GUI |
+| `/music playlist <name>` | Play a saved playlist (example: `/music playlist Gaming Playlist`) |
+| `/music settings` | Open settings (default volume, volume step, HUD) |
 
 Examples:
 
@@ -46,6 +49,7 @@ Examples:
 /music play https://www.youtube.com/watch?v=dQw4w9WgXcQ
 /music play never gonna give you up
 /music local ~/Music/song.mp3
+/music playlist Gaming Playlist
 ```
 
 ## Keybinds
@@ -58,6 +62,17 @@ Open **Options → Controls → PocketWave**. All are **unbound by default**:
 - Stop
 - Toggle Loop
 - Show Queue (prints the queue in chat)
+- Open Playlists
+
+## Playlists
+
+`/music playlist` or the Open Playlists keybind opens a GUI where you can create playlists, click into them, add songs (search/URL or the song currently playing), reorder them with **Move Up** / **Move Down**, remove songs, and toggle **Loop playlist**. Playlists are saved to `<game dir>/pocketwave/playlists.json` and stay across launches.
+
+`/music playlist Gaming Playlist` starts that playlist immediately. Playlist loop is separate from `/music loop` (which repeats only the current song). Starting a playlist turns song-loop off so tracks can advance.
+
+## Settings
+
+`/music settings` opens a small menu for **default volume** (remembered the next time you play a song, and also saved when you use volume up/down), **how much** `/music volup` and `/music voldown` change, and whether the now-playing HUD is shown. Saved to `<game dir>/pocketwave/settings.json`.
 
 ## HUD
 
