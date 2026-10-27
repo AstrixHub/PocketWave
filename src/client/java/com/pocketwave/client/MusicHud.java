@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 
 import com.pocketwave.PocketWave;
+import com.pocketwave.client.settings.MusicSettings;
 
 /**
  * Tiny top-left now-playing widget — short title, XP-styled volume bar, status.
@@ -49,7 +50,7 @@ final class MusicHud {
 
 	private static void render(GuiGraphics graphics, DeltaTracker deltaTracker) {
 		MusicController music = MusicController.INSTANCE;
-		if (!music.shouldShowHud()) {
+		if (!MusicSettings.INSTANCE.showHud() || !music.shouldShowHud()) {
 			return;
 		}
 

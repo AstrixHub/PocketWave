@@ -5,5 +5,6 @@
 	"key.pocketwave.volume_down": "Volume Down",
 	"key.pocketwave.stop": "Stop",
 	"key.pocketwave.loop": "Toggle Loop",
-	"key.pocketwave.show_queue": "Show Queue"
+	"key.pocketwave.show_queue": "Show Queue",
+	"key.pocketwave.open_playlists": "Open Playlists"
 }

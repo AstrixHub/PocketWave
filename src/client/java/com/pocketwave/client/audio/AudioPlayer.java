@@ -15,6 +15,7 @@ import com.pocketwave.PocketWave;
 
 /**
  * Plays a local WAV via Java Sound, independent of Minecraft's sound engine.
+ * The upcoming track can be decoded into a second clip while the current one plays.
  */
 public final class AudioPlayer {
 	/**
@@ -24,36 +25,64 @@ public final class AudioPlayer {
 	private static final float OUTPUT_SCALE = 0.10f;
 
 	private Clip clip;
+	private Clip nextClip;
+	private Path nextWav;
 	private float volume = 1.0f;
 	private boolean paused;
 	private boolean looping;
 
 	public synchronized void play(Path wavFile) throws UnsupportedAudioFileException, IOException, LineUnavailableException {
+		if (promoteNext(wavFile)) {
+			return;
+		}
+
+		discardNext();
 		stopInternal(false);
 
-		try (AudioInputStream stream = AudioSystem.getAudioInputStream(wavFile.toFile())) {
-			AudioFormat format = stream.getFormat();
-			AudioInputStream playStream = stream;
+		this.clip = openClip(wavFile);
+		applyVolumeTo(this.clip);
+		startPlayback();
+		paused = false;
+	}
 
-			if (format.getEncoding() != AudioFormat.Encoding.PCM_SIGNED) {
-				AudioFormat pcm = new AudioFormat(
-						AudioFormat.Encoding.PCM_SIGNED,
-						format.getSampleRate(),
-						16,
-						format.getChannels(),
-						format.getChannels() * 2,
-						format.getSampleRate(),
-						false
-				);
-				playStream = AudioSystem.getAudioInputStream(pcm, stream);
-			}
+	/**
+	 * Decode {@code wavFile} into a silent clip so {@link #play(Path)} can start it
+	 * immediately. Safe to call from a background thread.
+	 */
+	public synchronized void prepareNext(Path wavFile) {
+		if (wavFile == null) {
+			discardNext();
+			return;
+		}
 
-			Clip newClip = AudioSystem.getClip();
-			newClip.open(playStream);
-			this.clip = newClip;
-			applyVolume();
-			startPlayback();
-			paused = false;
+		Path normalized = wavFile.toAbsolutePath().normalize();
+		if (nextClip != null && normalized.equals(nextWav)) {
+			return;
+		}
+
+		discardNext();
+		try {
+			nextClip = openClip(normalized);
+			nextWav = normalized;
+			applyVolumeTo(nextClip);
+		} catch (Exception e) {
+			discardNext();
+			PocketWave.LOGGER.debug("Could not pre-open next clip for {}", wavFile, e);
+		}
+	}
+
+	public synchronized void discardNext() {
+		closeClip(nextClip);
+		nextClip = null;
+		nextWav = null;
+	}
+
+	public synchronized void discardNextIf(Path wavFile) {
+		if (wavFile == null || nextWav == null) {
+			return;
+		}
+		if (wavFile.toAbsolutePath().normalize().equals(nextWav)) {
+			discardNext();
 		}
 	}
 
@@ -84,23 +113,71 @@ public final class AudioPlayer {
 	}
 
 	public synchronized void stop() {
+		discardNext();
 		stopInternal(true);
 	}
 
-	private void stopInternal(boolean clearPaused) {
-		if (clip != null) {
-			try {
-				clip.stop();
-				clip.flush();
-				clip.close();
-			} catch (Exception e) {
-				PocketWave.LOGGER.debug("Error closing audio clip", e);
-			}
-			clip = null;
+	private boolean promoteNext(Path wavFile) {
+		if (nextClip == null || wavFile == null || nextWav == null) {
+			return false;
 		}
+		if (!wavFile.toAbsolutePath().normalize().equals(nextWav)) {
+			return false;
+		}
+
+		stopInternal(false);
+		clip = nextClip;
+		nextClip = null;
+		nextWav = null;
+		applyVolumeTo(clip);
+		startPlayback();
+		paused = false;
+		return true;
+	}
+
+	private void stopInternal(boolean clearPaused) {
+		closeClip(clip);
+		clip = null;
 
 		if (clearPaused) {
 			paused = false;
+		}
+	}
+
+	private static void closeClip(Clip toClose) {
+		if (toClose == null) {
+			return;
+		}
+		try {
+			toClose.stop();
+			toClose.flush();
+			toClose.close();
+		} catch (Exception e) {
+			PocketWave.LOGGER.debug("Error closing audio clip", e);
+		}
+	}
+
+	private static Clip openClip(Path wavFile) throws UnsupportedAudioFileException, IOException, LineUnavailableException {
+		try (AudioInputStream stream = AudioSystem.getAudioInputStream(wavFile.toFile())) {
+			AudioFormat format = stream.getFormat();
+			AudioInputStream playStream = stream;
+
+			if (format.getEncoding() != AudioFormat.Encoding.PCM_SIGNED) {
+				AudioFormat pcm = new AudioFormat(
+						AudioFormat.Encoding.PCM_SIGNED,
+						format.getSampleRate(),
+						16,
+						format.getChannels(),
+						format.getChannels() * 2,
+						format.getSampleRate(),
+						false
+				);
+				playStream = AudioSystem.getAudioInputStream(pcm, stream);
+			}
+
+			Clip newClip = AudioSystem.getClip();
+			newClip.open(playStream);
+			return newClip;
 		}
 	}
 
@@ -158,7 +235,8 @@ public final class AudioPlayer {
 
 	public synchronized void setVolume(float volume) {
 		this.volume = Math.max(0f, Math.min(1f, volume));
-		applyVolume();
+		applyVolumeTo(clip);
+		applyVolumeTo(nextClip);
 	}
 
 	public synchronized void adjustVolume(float delta) {
@@ -188,14 +266,14 @@ public final class AudioPlayer {
 		}
 	}
 
-	private void applyVolume() {
-		if (clip == null) {
+	private void applyVolumeTo(Clip target) {
+		if (target == null) {
 			return;
 		}
 
 		try {
-			if (clip.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
-				FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
+			if (target.isControlSupported(FloatControl.Type.MASTER_GAIN)) {
+				FloatControl gain = (FloatControl) target.getControl(FloatControl.Type.MASTER_GAIN);
 				float min = gain.getMinimum();
 				float max = gain.getMaximum();
 

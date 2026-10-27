@@ -24,7 +24,7 @@ public final class YtDlpService {
 		Path ytDlp = ExternalTools.ytDlp(status);
 		Path ffmpeg = ExternalTools.ffmpeg(status);
 
-		String input = normalizeInput(queryOrUrl);
+		String input = resolveInput(queryOrUrl, ytDlp);
 		Path workDir = CachePaths.newWorkDir("yt");
 		Path outputTemplate = workDir.resolve("audio.%(ext)s");
 
@@ -110,7 +110,7 @@ public final class YtDlpService {
 		}
 	}
 
-	private static String normalizeInput(String queryOrUrl) {
+	private static String resolveInput(String queryOrUrl, Path ytDlp) throws IOException, InterruptedException {
 		String trimmed = queryOrUrl.trim();
 		String lower = trimmed.toLowerCase(Locale.ROOT);
 
@@ -119,7 +119,149 @@ public final class YtDlpService {
 			return trimmed;
 		}
 
-		return "ytsearch1:" + trimmed;
+		String matched = pickSearchResult(ytDlp, trimmed);
+		if (matched != null) {
+			return matched;
+		}
+
+		return "ytsearch1:\"" + sanitizeQuery(trimmed) + "\"";
+	}
+
+	/**
+	 * Looks at the top YouTube hits and picks the title that actually matches the query,
+	 * instead of blindly taking result #1 (covers, live rips, random uploads).
+	 */
+	private static String pickSearchResult(Path ytDlp, String query) throws IOException, InterruptedException {
+		String sanitized = sanitizeQuery(query);
+		List<String> cmd = new ArrayList<>();
+		cmd.add(ytDlp.toString());
+		cmd.add("--flat-playlist");
+		cmd.add("--skip-download");
+		cmd.add("--no-warnings");
+		cmd.add("--no-playlist");
+		cmd.add("--print");
+		cmd.add("%(id)s\t%(title)s\t%(duration)s");
+		cmd.add("ytsearch5:\"" + sanitized + "\"");
+
+		ProcessUtil.Result result = ProcessUtil.run(cmd, 60);
+		if (result.exitCode() != 0) {
+			PocketWave.LOGGER.warn("Search failed for '{}': {}", query, result.output());
+			return null;
+		}
+
+		SearchHit best = null;
+		int bestScore = Integer.MIN_VALUE;
+		for (String line : result.output().lines().toList()) {
+			SearchHit hit = SearchHit.parse(line);
+			if (hit == null) {
+				continue;
+			}
+			int score = hit.score(sanitized);
+			if (score > bestScore) {
+				bestScore = score;
+				best = hit;
+			}
+		}
+
+		if (best == null) {
+			return null;
+		}
+
+		PocketWave.LOGGER.info("Search '{}' picked '{}' ({})", query, best.title, best.id);
+		return "https://www.youtube.com/watch?v=" + best.id;
+	}
+
+	private static String sanitizeQuery(String query) {
+		return query.replace('"', ' ').replace('\n', ' ').replace('\r', ' ').trim();
+	}
+
+	private record SearchHit(String id, String title, int durationSeconds) {
+		static SearchHit parse(String line) {
+			if (line == null || line.isBlank() || line.startsWith("[")) {
+				return null;
+			}
+			String[] parts = line.split("\t", 3);
+			if (parts.length < 2) {
+				return null;
+			}
+			String id = parts[0].trim();
+			if (id.length() < 8 || id.contains(" ")) {
+				return null;
+			}
+			String title = parts[1].trim();
+			int duration = -1;
+			if (parts.length >= 3) {
+				try {
+					duration = (int) Double.parseDouble(parts[2].trim());
+				} catch (NumberFormatException ignored) {
+				}
+			}
+			return new SearchHit(id, title, duration);
+		}
+
+		int score(String query) {
+			String q = normalize(query);
+			String t = normalize(title);
+			if (q.isEmpty() || t.isEmpty()) {
+				return Integer.MIN_VALUE;
+			}
+
+			int score = 0;
+			if (t.equals(q)) {
+				score += 80;
+			} else if (t.contains(q)) {
+				score += 36;
+			}
+
+			String[] tokens = q.split(" ");
+			int words = 0;
+			int hits = 0;
+			for (String token : tokens) {
+				if (token.length() <= 1) {
+					continue;
+				}
+				words++;
+				if (t.contains(token)) {
+					hits++;
+				} else {
+					score -= 10;
+				}
+			}
+			if (words > 0) {
+				score += (hits * 12) / words;
+			}
+
+			String[] junk = {
+					"nightcore", "sped up", "slowed", "reverb", "8d", "cover", "karaoke",
+					"remix", "mashup", "hour", "hours", "live", "concert", "reaction",
+					"chipmunk", "bass boosted", "tiktok"
+			};
+			for (String word : junk) {
+				if (t.contains(word) && !q.contains(word)) {
+					score -= 20;
+				}
+			}
+
+			if (t.contains("official") || t.contains("topic") || t.contains("audio") || t.contains("lyrics")) {
+				score += 8;
+			}
+
+			if (durationSeconds > 0) {
+				if (durationSeconds < 40) {
+					score -= 24;
+				} else if (durationSeconds <= 480) {
+					score += 6;
+				} else if (durationSeconds > 900 && !q.contains("mix") && !q.contains("hour")) {
+					score -= 16;
+				}
+			}
+
+			return score;
+		}
+
+		private static String normalize(String text) {
+			return text.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+		}
 	}
 
 	private static Path findDownloadedFile(Path workDir) throws IOException {

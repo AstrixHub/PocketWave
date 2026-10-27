@@ -14,16 +14,20 @@ import com.pocketwave.PocketWave;
 import com.pocketwave.client.audio.AudioPlayer;
 import com.pocketwave.client.audio.LocalFileService;
 import com.pocketwave.client.audio.YtDlpService;
+import com.pocketwave.client.playlist.Playlist;
+import com.pocketwave.client.playlist.PlaylistSong;
+import com.pocketwave.client.playlist.PlaylistStore;
+import com.pocketwave.client.settings.MusicSettings;
 
 /**
- * Coordinates async fetch/convert, playback, and a preloaded upcoming queue.
+ * Coordinates async fetch/convert, playback, a preloaded upcoming queue, and playlists.
  * Temp WAVs live under the game dir cache and are deleted when finished/discarded.
  */
 public final class MusicController {
 	public static final MusicController INSTANCE = new MusicController();
 
-	private static final float VOLUME_STEP = 0.10f;
 	private static final int MAX_QUEUE = 25;
+	private static final int PRELOAD_AHEAD = 2;
 
 	private final AudioPlayer player = new AudioPlayer();
 	private final YtDlpService ytDlp = new YtDlpService();
@@ -44,17 +48,77 @@ public final class MusicController {
 	private Future<?> currentJob;
 	private Path currentWorkDir;
 	private String currentTitle;
+	private QueuedItem.Kind currentKind;
+	private String currentValue;
 	private volatile boolean loading;
+
+	private String activePlaylistName;
+	private int playlistIndex = -1;
+	private final List<QueuedItem> playlistPreloads = new ArrayList<>();
+	private int consecutivePlaylistFailures;
 
 	private MusicController() {
 	}
 
+	public void applySavedVolume() {
+		player.setVolume(MusicSettings.INSTANCE.volumePercent() / 100f);
+	}
+
 	public void playQuery(String queryOrUrl) {
-		startJob("Fetching audio...", status -> ytDlp.prepare(queryOrUrl, status));
+		String trimmed = queryOrUrl.trim();
+		if (trimmed.isEmpty()) {
+			ChatFeedback.error("Usage: /music play <url|search terms>");
+			return;
+		}
+		clearPlaylistSession();
+		setCurrentSource(QueuedItem.Kind.QUERY, trimmed);
+		startJob("Fetching audio...", status -> ytDlp.prepare(trimmed, status));
 	}
 
 	public void playLocal(String path) {
-		startJob("Loading local file...", status -> localFiles.prepare(path, status));
+		String trimmed = path.trim();
+		if (trimmed.isEmpty()) {
+			ChatFeedback.error("Usage: /music local <path>");
+			return;
+		}
+		clearPlaylistSession();
+		setCurrentSource(QueuedItem.Kind.LOCAL, trimmed);
+		startJob("Loading local file...", status -> localFiles.prepare(trimmed, status));
+	}
+
+	public void playPlaylist(String name) {
+		playPlaylist(name, 0);
+	}
+
+	public void playPlaylist(String name, int startIndex) {
+		Playlist playlist = PlaylistStore.INSTANCE.find(name);
+		if (playlist == null) {
+			ChatFeedback.error("No playlist named \"" + name.trim() + "\".");
+			return;
+		}
+		if (playlist.isEmpty()) {
+			ChatFeedback.error("That playlist is empty.");
+			return;
+		}
+
+		int index = Math.max(0, Math.min(startIndex, playlist.songs().size() - 1));
+		discardQueue();
+		clearPlaylistSession();
+		player.setLooping(false);
+		activePlaylistName = playlist.name();
+		consecutivePlaylistFailures = 0;
+		ChatFeedback.info("Playing playlist: " + playlist.name());
+		playPlaylistIndex(index);
+	}
+
+	public PlaylistSong currentSongSnapshot() {
+		if (currentValue == null || currentValue.isBlank()) {
+			return null;
+		}
+		PlaylistSong.Kind kind = currentKind == QueuedItem.Kind.LOCAL
+				? PlaylistSong.Kind.LOCAL
+				: PlaylistSong.Kind.QUERY;
+		return new PlaylistSong(kind, currentValue, currentTitle);
 	}
 
 	public void queueQuery(String queryOrUrl) {
@@ -101,6 +165,7 @@ public final class MusicController {
 
 	public void clearQueue() {
 		discardQueue();
+		armNextClip();
 		ChatFeedback.info("Queue cleared.");
 	}
 
@@ -121,51 +186,205 @@ public final class MusicController {
 	}
 
 	private void onTrackEnded() {
-		player.stop();
-		cleanupWorkDir();
+		Path oldDir = currentWorkDir;
+		currentWorkDir = null;
 		currentTitle = null;
-		playNextFromQueue();
+		if (!playNext()) {
+			player.stop();
+			clearCurrentSource();
+		}
+		YtDlpService.deleteQuietly(oldDir);
 	}
 
-	private void playNextFromQueue() {
+	private boolean playNext() {
 		QueuedItem next;
 		synchronized (queue) {
 			next = queue.pollFirst();
 		}
-		if (next == null) {
+		if (next != null) {
+			setCurrentSource(next.kind(), next.value());
+			YtDlpService.PreparedTrack ready = next.takePrepared();
+			if (ready != null) {
+				ChatFeedback.info("Playing next: " + ready.title());
+				playPrepared(ready);
+				return true;
+			}
+			startJob("Loading next...", status -> next.awaitOrFetch(ytDlp, localFiles));
+			return true;
+		}
+
+		return playNextFromPlaylist();
+	}
+
+	private boolean playNextFromPlaylist() {
+		if (activePlaylistName == null) {
+			return false;
+		}
+
+		Playlist playlist = PlaylistStore.INSTANCE.find(activePlaylistName);
+		if (playlist == null || playlist.isEmpty()) {
+			clearPlaylistSession();
+			return false;
+		}
+
+		int next = playlistIndex + 1;
+		if (next >= playlist.songs().size()) {
+			if (playlist.loop()) {
+				next = 0;
+			} else {
+				clearPlaylistSession();
+				return false;
+			}
+		}
+
+		playPlaylistIndex(next);
+		return true;
+	}
+
+	private void playPlaylistIndex(int index) {
+		Playlist playlist = PlaylistStore.INSTANCE.find(activePlaylistName);
+		if (playlist == null || playlist.isEmpty()) {
+			clearPlaylistSession();
+			clearCurrentSource();
 			return;
 		}
 
-		YtDlpService.PreparedTrack ready = next.takePrepared();
-		if (ready != null) {
-			ChatFeedback.info("Playing next: " + ready.title());
-			playPrepared(ready);
+		int clamped = Math.max(0, Math.min(index, playlist.songs().size() - 1));
+		playlistIndex = clamped;
+		PlaylistSong song = playlist.songs().get(clamped);
+		setCurrentSource(kindOf(song), song.value());
+
+		QueuedItem readyItem = takeMatchingPreload(song);
+		if (readyItem != null) {
+			YtDlpService.PreparedTrack ready = readyItem.takePrepared();
+			if (ready != null) {
+				ChatFeedback.info("Playing next: " + ready.title());
+				playPrepared(ready);
+				preloadPlaylistAhead();
+				return;
+			}
+			startJob("Loading next...", status -> readyItem.awaitOrFetch(ytDlp, localFiles));
+			preloadPlaylistAhead();
 			return;
 		}
 
-		// Not ready yet — finish preload (or fetch) on the play thread, then start immediately.
-		startJob("Loading next...", status -> next.awaitOrFetch(ytDlp, localFiles));
+		startJob("Fetching audio...", status -> prepareSong(song, status));
+		preloadPlaylistAhead();
+	}
+
+	private QueuedItem takeMatchingPreload(PlaylistSong song) {
+		for (int i = 0; i < playlistPreloads.size(); i++) {
+			QueuedItem item = playlistPreloads.get(i);
+			if (item.matches(song)) {
+				playlistPreloads.remove(i);
+				return item;
+			}
+		}
+		return null;
+	}
+
+	private void preloadPlaylistAhead() {
+		if (activePlaylistName == null) {
+			discardPlaylistPreloads();
+			return;
+		}
+		Playlist playlist = PlaylistStore.INSTANCE.find(activePlaylistName);
+		if (playlist == null || playlist.isEmpty()) {
+			discardPlaylistPreloads();
+			return;
+		}
+
+		List<PlaylistSong> wanted = upcomingPlaylistSongs(playlist);
+		List<QueuedItem> kept = new ArrayList<>();
+		for (PlaylistSong song : wanted) {
+			QueuedItem existing = takeMatchingPreload(song);
+			if (existing != null) {
+				kept.add(existing);
+			} else {
+				QueuedItem item = new QueuedItem(kindOf(song), song.value());
+				kept.add(item);
+				startPreload(item);
+			}
+		}
+		for (QueuedItem leftover : playlistPreloads) {
+			YtDlpService.PreparedTrack track = leftover.peekPrepared();
+			if (track != null) {
+				player.discardNextIf(track.wavFile());
+			}
+			leftover.discard();
+		}
+		playlistPreloads.clear();
+		playlistPreloads.addAll(kept);
+	}
+
+	private List<PlaylistSong> upcomingPlaylistSongs(Playlist playlist) {
+		List<PlaylistSong> songs = playlist.songs();
+		int size = songs.size();
+		List<PlaylistSong> wanted = new ArrayList<>();
+		if (size == 0) {
+			return wanted;
+		}
+
+		int step = 1;
+		while (wanted.size() < PRELOAD_AHEAD && step <= size) {
+			int index = playlistIndex + step;
+			if (index >= size) {
+				if (!playlist.loop()) {
+					break;
+				}
+				index = index % size;
+			}
+			if (index == playlistIndex && size > 1) {
+				break;
+			}
+			wanted.add(songs.get(index));
+			if (index == playlistIndex) {
+				break;
+			}
+			step++;
+		}
+		return wanted;
+	}
+
+	private void discardPlaylistPreloads() {
+		for (QueuedItem item : playlistPreloads) {
+			YtDlpService.PreparedTrack track = item.peekPrepared();
+			if (track != null) {
+				player.discardNextIf(track.wavFile());
+			}
+			item.discard();
+		}
+		playlistPreloads.clear();
 	}
 
 	private void playPrepared(YtDlpService.PreparedTrack track) {
 		jobEpoch.incrementAndGet();
 		cancelJob();
-		player.stop();
-		cleanupWorkDir();
+
+		Path oldDir = currentWorkDir;
+		currentWorkDir = null;
 
 		try {
+			player.play(track.wavFile());
 			currentWorkDir = track.workDir();
 			currentTitle = track.title();
-			player.play(track.wavFile());
 			loading = false;
+			consecutivePlaylistFailures = 0;
+			rememberPlaylistTitle(track.title());
 		} catch (Exception e) {
 			loading = false;
 			currentTitle = null;
 			YtDlpService.deleteQuietly(track.workDir());
+			YtDlpService.deleteQuietly(oldDir);
 			PocketWave.LOGGER.error("Failed to play preloaded track", e);
 			ChatFeedback.error(ChatFeedback.friendlyError(e.getMessage()));
-			playNextFromQueue();
+			onPlaylistPlayFailed();
+			playNext();
+			return;
 		}
+
+		YtDlpService.deleteQuietly(oldDir);
+		armNextClip();
 	}
 
 	private void startPreload(QueuedItem item) {
@@ -178,6 +397,7 @@ public final class MusicController {
 					});
 				};
 				item.complete(track);
+				armNextClip();
 			} catch (Exception e) {
 				item.fail(e.getMessage());
 				PocketWave.LOGGER.warn("Preload failed for {}: {}", item.value(), e.toString());
@@ -206,6 +426,9 @@ public final class MusicController {
 				currentTitle = track.title();
 				player.play(track.wavFile());
 				loading = false;
+				consecutivePlaylistFailures = 0;
+				rememberPlaylistTitle(track.title());
+				armNextClip();
 				ChatFeedback.info("Now playing: " + track.title());
 			} catch (Exception e) {
 				if (epoch != jobEpoch.get()) {
@@ -219,9 +442,30 @@ public final class MusicController {
 					message = e.getCause().getMessage();
 				}
 				ChatFeedback.error(ChatFeedback.friendlyError(message));
-				playNextFromQueue();
+				onPlaylistPlayFailed();
+				playNext();
 			}
 		});
+	}
+
+	private void rememberPlaylistTitle(String title) {
+		if (activePlaylistName == null || title == null || title.isBlank()) {
+			return;
+		}
+		PlaylistStore.INSTANCE.updateSongTitle(activePlaylistName, playlistIndex, title);
+	}
+
+	private void onPlaylistPlayFailed() {
+		if (activePlaylistName == null) {
+			return;
+		}
+		consecutivePlaylistFailures++;
+		Playlist playlist = PlaylistStore.INSTANCE.find(activePlaylistName);
+		int size = playlist == null ? 0 : playlist.songs().size();
+		if (size > 0 && consecutivePlaylistFailures >= size) {
+			ChatFeedback.error("Stopped playlist — every song failed to load.");
+			clearPlaylistSession();
+		}
 	}
 
 	public void pause() {
@@ -262,6 +506,8 @@ public final class MusicController {
 		cancelJob();
 		player.stop();
 		cleanupWorkDir();
+		clearPlaylistSession();
+		clearCurrentSource();
 		currentTitle = null;
 		loading = false;
 		ChatFeedback.info("Stopped.");
@@ -273,19 +519,26 @@ public final class MusicController {
 	}
 
 	public void volumeUp() {
-		player.adjustVolume(VOLUME_STEP);
+		player.adjustVolume(MusicSettings.INSTANCE.volumeStep());
+		persistVolume();
 		ChatFeedback.info("Volume: " + percent() + "%");
 	}
 
 	public void volumeDown() {
-		player.adjustVolume(-VOLUME_STEP);
+		player.adjustVolume(-MusicSettings.INSTANCE.volumeStep());
+		persistVolume();
 		ChatFeedback.info("Volume: " + percent() + "%");
 	}
 
 	public void setVolumePercent(int percent) {
 		int clamped = Math.max(0, Math.min(100, percent));
 		player.setVolume(clamped / 100f);
+		persistVolume();
 		ChatFeedback.info("Volume: " + clamped + "%");
+	}
+
+	private void persistVolume() {
+		MusicSettings.INSTANCE.setVolumePercent(percent());
 	}
 
 	public void nowPlaying() {
@@ -304,7 +557,8 @@ public final class MusicController {
 		String loop = player.isLooping() ? ", loop on" : "";
 		int queued = queueSize();
 		String queuedLabel = queued > 0 ? ", +" + queued + " queued" : "";
-		ChatFeedback.info(state + ": " + title + " (" + percent() + "%" + loop + queuedLabel + ")");
+		String playlist = activePlaylistName == null ? "" : ", playlist " + activePlaylistName;
+		ChatFeedback.info(state + ": " + title + " (" + percent() + "%" + loop + queuedLabel + playlist + ")");
 	}
 
 	/** Visible while a track is loaded (playing or paused) or still fetching. */
@@ -336,12 +590,15 @@ public final class MusicController {
 		cancelJob();
 		player.stop();
 		cleanupWorkDir();
+		clearPlaylistSession();
+		clearCurrentSource();
 		discardQueue();
 		playExecutor.shutdownNow();
 		preloadExecutor.shutdownNow();
 	}
 
 	private void discardQueue() {
+		player.discardNext();
 		List<QueuedItem> discarded;
 		synchronized (queue) {
 			discarded = new ArrayList<>(queue);
@@ -350,6 +607,62 @@ public final class MusicController {
 		for (QueuedItem item : discarded) {
 			item.discard();
 		}
+	}
+
+	/**
+	 * Decode the immediate next WAV into the player (queue head, else playlist next).
+	 * Only one extra clip is kept in memory.
+	 */
+	private void armNextClip() {
+		QueuedItem next = peekNextItem();
+		if (next == null) {
+			player.discardNext();
+			return;
+		}
+		YtDlpService.PreparedTrack track = next.peekPrepared();
+		if (track == null || track.wavFile() == null) {
+			player.discardNext();
+			return;
+		}
+		player.prepareNext(track.wavFile());
+	}
+
+	private QueuedItem peekNextItem() {
+		synchronized (queue) {
+			QueuedItem head = queue.peekFirst();
+			if (head != null) {
+				return head;
+			}
+		}
+		return playlistPreloads.isEmpty() ? null : playlistPreloads.get(0);
+	}
+
+	private void clearPlaylistSession() {
+		activePlaylistName = null;
+		playlistIndex = -1;
+		consecutivePlaylistFailures = 0;
+		discardPlaylistPreloads();
+	}
+
+	private void setCurrentSource(QueuedItem.Kind kind, String value) {
+		currentKind = kind;
+		currentValue = value;
+	}
+
+	private void clearCurrentSource() {
+		currentKind = null;
+		currentValue = null;
+	}
+
+	private static QueuedItem.Kind kindOf(PlaylistSong song) {
+		return song.kind() == PlaylistSong.Kind.LOCAL ? QueuedItem.Kind.LOCAL : QueuedItem.Kind.QUERY;
+	}
+
+	private YtDlpService.PreparedTrack prepareSong(PlaylistSong song, java.util.function.Consumer<String> status) throws Exception {
+		return switch (song.kind()) {
+			case QUERY -> ytDlp.prepare(song.value(), status);
+			case LOCAL -> localFiles.prepare(song.value(), status);
+		};
 	}
 
 	private int percent() {
@@ -395,6 +708,10 @@ public final class MusicController {
 			return value;
 		}
 
+		boolean matches(PlaylistSong song) {
+			return kindOf(song) == kind && song.value().equals(value);
+		}
+
 		String display() {
 			synchronized (lock) {
 				if (prepared != null) {
@@ -415,6 +732,12 @@ public final class MusicController {
 				prepared = track;
 				done = true;
 				lock.notifyAll();
+			}
+		}
+
+		YtDlpService.PreparedTrack peekPrepared() {
+			synchronized (lock) {
+				return prepared;
 			}
 		}
 
