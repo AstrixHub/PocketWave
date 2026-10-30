@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.pocketwave.PocketWave;
@@ -37,11 +40,15 @@ public final class MusicController {
 		t.setDaemon(true);
 		return t;
 	});
-	private final ExecutorService preloadExecutor = Executors.newFixedThreadPool(2, r -> {
-		Thread t = new Thread(r, "pocketwave-preload");
-		t.setDaemon(true);
-		return t;
-	});
+	private final ThreadPoolExecutor preloadExecutor = new ThreadPoolExecutor(
+			2, 2, 30L, TimeUnit.SECONDS,
+			new LinkedBlockingQueue<>(),
+			r -> {
+				Thread t = new Thread(r, "pocketwave-preload");
+				t.setDaemon(true);
+				return t;
+			}
+	);
 
 	private final AtomicInteger jobEpoch = new AtomicInteger();
 	private final Deque<QueuedItem> queue = new ArrayDeque<>();
@@ -58,6 +65,7 @@ public final class MusicController {
 	private int consecutivePlaylistFailures;
 
 	private MusicController() {
+		preloadExecutor.allowCoreThreadTimeOut(true);
 	}
 
 	public void applySavedVolume() {
@@ -182,6 +190,10 @@ public final class MusicController {
 		}
 		if (player.hasFinished()) {
 			onTrackEnded();
+			return;
+		}
+		if (player.needsNextDecode()) {
+			preloadExecutor.execute(player::decodePreparedNext);
 		}
 	}
 

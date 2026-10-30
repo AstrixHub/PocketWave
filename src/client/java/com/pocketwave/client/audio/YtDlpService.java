@@ -32,7 +32,7 @@ public final class YtDlpService {
 		downloadCmd.add(ytDlp.toString());
 		downloadCmd.add("--no-playlist");
 		downloadCmd.add("--no-warnings");
-		downloadCmd.add("--newline");
+		downloadCmd.add("--no-progress");
 		downloadCmd.add("--ffmpeg-location");
 		downloadCmd.add(ffmpeg.getParent() != null ? ffmpeg.getParent().toString() : ffmpeg.toString());
 		downloadCmd.add("-f");
@@ -93,6 +93,9 @@ public final class YtDlpService {
 	private static void convertToWav(Path ffmpeg, Path input, Path wav) throws IOException, InterruptedException {
 		List<String> cmd = List.of(
 				ffmpeg.toString(),
+				"-nostdin",
+				"-hide_banner",
+				"-loglevel", "error",
 				"-y",
 				"-i", input.toString(),
 				"-vn",
@@ -124,15 +127,38 @@ public final class YtDlpService {
 			return matched;
 		}
 
-		return "ytsearch1:\"" + sanitizeQuery(trimmed) + "\"";
+		return "ytsearch1:" + sanitizeQuery(trimmed);
 	}
 
 	/**
-	 * Looks at the top YouTube hits and picks the title that actually matches the query,
-	 * instead of blindly taking result #1 (covers, live rips, random uploads).
+	 * Looks at the top YouTube hits and picks a title that actually matches the query.
+	 * Phrase search is a fallback only — quoting "Dolphin" will miss titles like "Dol9hin".
 	 */
 	private static String pickSearchResult(Path ytDlp, String query) throws IOException, InterruptedException {
 		String sanitized = sanitizeQuery(query);
+		List<SearchHit> hits = searchHits(ytDlp, sanitized, false);
+		SearchHit best = bestHit(hits, sanitized);
+		if (best == null || !best.acceptable(sanitized)) {
+			List<SearchHit> quoted = searchHits(ytDlp, sanitized, true);
+			for (SearchHit hit : quoted) {
+				if (hits.stream().noneMatch(existing -> existing.id.equals(hit.id))) {
+					hits.add(hit);
+				}
+			}
+			best = bestHit(hits, sanitized);
+		}
+
+		if (best == null || !best.acceptable(sanitized)) {
+			PocketWave.LOGGER.info("Search '{}' had no close title match in {} hits", query, hits.size());
+			return null;
+		}
+
+		PocketWave.LOGGER.info("Search '{}' picked '{}' ({})", query, best.title, best.id);
+		return "https://www.youtube.com/watch?v=" + best.id;
+	}
+
+	private static List<SearchHit> searchHits(Path ytDlp, String query, boolean quoted) throws IOException, InterruptedException {
+		String search = quoted ? "ytsearch10:\"" + query + "\"" : "ytsearch10:" + query;
 		List<String> cmd = new ArrayList<>();
 		cmd.add(ytDlp.toString());
 		cmd.add("--flat-playlist");
@@ -141,34 +167,35 @@ public final class YtDlpService {
 		cmd.add("--no-playlist");
 		cmd.add("--print");
 		cmd.add("%(id)s\t%(title)s\t%(duration)s");
-		cmd.add("ytsearch5:\"" + sanitized + "\"");
+		cmd.add(search);
 
 		ProcessUtil.Result result = ProcessUtil.run(cmd, 60);
 		if (result.exitCode() != 0) {
 			PocketWave.LOGGER.warn("Search failed for '{}': {}", query, result.output());
-			return null;
+			return new ArrayList<>();
 		}
 
-		SearchHit best = null;
-		int bestScore = Integer.MIN_VALUE;
+		List<SearchHit> hits = new ArrayList<>();
 		for (String line : result.output().lines().toList()) {
 			SearchHit hit = SearchHit.parse(line);
-			if (hit == null) {
-				continue;
+			if (hit != null) {
+				hits.add(hit);
 			}
-			int score = hit.score(sanitized);
+		}
+		return hits;
+	}
+
+	private static SearchHit bestHit(List<SearchHit> hits, String query) {
+		SearchHit best = null;
+		int bestScore = Integer.MIN_VALUE;
+		for (SearchHit hit : hits) {
+			int score = hit.score(query);
 			if (score > bestScore) {
 				bestScore = score;
 				best = hit;
 			}
 		}
-
-		if (best == null) {
-			return null;
-		}
-
-		PocketWave.LOGGER.info("Search '{}' picked '{}' ({})", query, best.title, best.id);
-		return "https://www.youtube.com/watch?v=" + best.id;
+		return best;
 	}
 
 	private static String sanitizeQuery(String query) {
@@ -176,6 +203,16 @@ public final class YtDlpService {
 	}
 
 	private record SearchHit(String id, String title, int durationSeconds) {
+		private static final String[] STOPWORDS = {
+				"a", "an", "the", "for", "of", "to", "and", "or", "in", "on", "at", "by", "with", "from"
+		};
+		private static final String[] JUNK = {
+				"nightcore", "sped up", "slowed", "reverb", "8d", "cover", "karaoke",
+				"remix", "mashup", "hour", "hours", "live", "concert", "reaction",
+				"chipmunk", "bass boosted", "tiktok", "gameplay", "pvp", "montage",
+				"highlights", "winstreak", "vs"
+		};
+
 		static SearchHit parse(String line) {
 			if (line == null || line.isBlank() || line.startsWith("[")) {
 				return null;
@@ -199,6 +236,16 @@ public final class YtDlpService {
 			return new SearchHit(id, title, duration);
 		}
 
+		boolean acceptable(String query) {
+			int distinctive = distinctiveCount(query);
+			if (distinctive <= 0) {
+				return true;
+			}
+			int matched = matchedDistinctive(query);
+			int needed = distinctive <= 2 ? distinctive : (distinctive * 2 + 2) / 3;
+			return matched >= needed;
+		}
+
 		int score(String query) {
 			String q = normalize(query);
 			String t = normalize(title);
@@ -213,32 +260,29 @@ public final class YtDlpService {
 				score += 36;
 			}
 
-			String[] tokens = q.split(" ");
-			int words = 0;
-			int hits = 0;
-			for (String token : tokens) {
-				if (token.length() <= 1) {
+			int distinctive = 0;
+			int matched = 0;
+			for (String token : q.split(" ")) {
+				if (!isDistinctive(token)) {
 					continue;
 				}
-				words++;
-				if (t.contains(token)) {
-					hits++;
+				distinctive++;
+				if (tokenMatches(token, t)) {
+					matched++;
+					score += 18;
 				} else {
-					score -= 10;
+					score -= 30;
 				}
 			}
-			if (words > 0) {
-				score += (hits * 12) / words;
+
+			if (distinctive > 0 && matched == 0) {
+				return Integer.MIN_VALUE / 4;
 			}
 
-			String[] junk = {
-					"nightcore", "sped up", "slowed", "reverb", "8d", "cover", "karaoke",
-					"remix", "mashup", "hour", "hours", "live", "concert", "reaction",
-					"chipmunk", "bass boosted", "tiktok"
-			};
+			String[] junk = JUNK;
 			for (String word : junk) {
 				if (t.contains(word) && !q.contains(word)) {
-					score -= 20;
+					score -= 25;
 				}
 			}
 
@@ -257,6 +301,79 @@ public final class YtDlpService {
 			}
 
 			return score;
+		}
+
+		private int distinctiveCount(String query) {
+			int count = 0;
+			for (String token : normalize(query).split(" ")) {
+				if (isDistinctive(token)) {
+					count++;
+				}
+			}
+			return count;
+		}
+
+		private int matchedDistinctive(String query) {
+			String t = normalize(title);
+			int matched = 0;
+			for (String token : normalize(query).split(" ")) {
+				if (isDistinctive(token) && tokenMatches(token, t)) {
+					matched++;
+				}
+			}
+			return matched;
+		}
+
+		private static boolean isDistinctive(String token) {
+			if (token == null || token.length() <= 1) {
+				return false;
+			}
+			for (String stop : STOPWORDS) {
+				if (token.equals(stop)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private static boolean tokenMatches(String token, String titleNorm) {
+			if (titleNorm.contains(token)) {
+				return true;
+			}
+			if (token.length() < 4) {
+				return false;
+			}
+			for (String word : titleNorm.split(" ")) {
+				if (word.length() < 4) {
+					continue;
+				}
+				if (Math.abs(word.length() - token.length()) > 1) {
+					continue;
+				}
+				if (levenshtein(token, word) <= 1) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static int levenshtein(String a, String b) {
+			int[] prev = new int[b.length() + 1];
+			int[] cur = new int[b.length() + 1];
+			for (int j = 0; j <= b.length(); j++) {
+				prev[j] = j;
+			}
+			for (int i = 1; i <= a.length(); i++) {
+				cur[0] = i;
+				for (int j = 1; j <= b.length(); j++) {
+					int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+					cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+				}
+				int[] swap = prev;
+				prev = cur;
+				cur = swap;
+			}
+			return prev[b.length()];
 		}
 
 		private static String normalize(String text) {
