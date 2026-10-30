@@ -26,8 +26,8 @@ public final class MusicSettings {
 
 	private int volumePercent = DEFAULT_VOLUME;
 	private int volumeStepPercent = DEFAULT_STEP;
-	private boolean showHud = true;
-	private boolean loaded;
+	private volatile boolean showHud = true;
+	private volatile boolean loaded;
 
 	private MusicSettings() {
 	}
@@ -46,7 +46,7 @@ public final class MusicSettings {
 		return volumeStepPercent() / 100f;
 	}
 
-	public synchronized boolean showHud() {
+	public boolean showHud() {
 		ensureLoaded();
 		return showHud;
 	}
@@ -73,6 +73,15 @@ public final class MusicSettings {
 		if (loaded) {
 			return;
 		}
+		synchronized (this) {
+			if (loaded) {
+				return;
+			}
+			loadUnlocked();
+		}
+	}
+
+	private void loadUnlocked() {
 		loaded = true;
 		Path file = filePath();
 		if (file == null || !Files.isRegularFile(file)) {

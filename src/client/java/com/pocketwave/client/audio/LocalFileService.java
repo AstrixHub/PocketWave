@@ -32,6 +32,9 @@ public final class LocalFileService {
 
 		List<String> cmd = List.of(
 				ffmpeg.toString(),
+				"-nostdin",
+				"-hide_banner",
+				"-loglevel", "error",
 				"-y",
 				"-i", path.toAbsolutePath().toString(),
 				"-vn",

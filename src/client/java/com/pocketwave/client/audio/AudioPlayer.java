@@ -8,6 +8,7 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.Clip;
 import javax.sound.sampled.FloatControl;
+import javax.sound.sampled.LineEvent;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
 
@@ -23,31 +24,37 @@ public final class AudioPlayer {
 	 * true output so "100%" matches the old ~10% loudness.
 	 */
 	private static final float OUTPUT_SCALE = 0.10f;
+	/** Decode the next WAV only when the current track is this close to ending. */
+	private static final double NEXT_DECODE_SECONDS = 12.0;
 
 	private Clip clip;
 	private Clip nextClip;
 	private Path nextWav;
+	private boolean nextDecodeStarted;
 	private float volume = 1.0f;
 	private boolean paused;
 	private boolean looping;
+	private volatile boolean finished;
 
 	public synchronized void play(Path wavFile) throws UnsupportedAudioFileException, IOException, LineUnavailableException {
-		if (promoteNext(wavFile)) {
+		Path normalized = wavFile.toAbsolutePath().normalize();
+		if (promoteNext(normalized)) {
 			return;
 		}
 
 		discardNext();
 		stopInternal(false);
 
-		this.clip = openClip(wavFile);
+		this.clip = openClip(normalized);
 		applyVolumeTo(this.clip);
+		finished = false;
 		startPlayback();
 		paused = false;
 	}
 
 	/**
-	 * Decode {@code wavFile} into a silent clip so {@link #play(Path)} can start it
-	 * immediately. Safe to call from a background thread.
+	 * Remember the next WAV so it can be decoded shortly before the current track
+	 * ends. Safe to call from a background thread; does not decode immediately.
 	 */
 	public synchronized void prepareNext(Path wavFile) {
 		if (wavFile == null) {
@@ -56,18 +63,54 @@ public final class AudioPlayer {
 		}
 
 		Path normalized = wavFile.toAbsolutePath().normalize();
-		if (nextClip != null && normalized.equals(nextWav)) {
+		if (normalized.equals(nextWav) && (nextClip != null || nextDecodeStarted)) {
 			return;
 		}
 
 		discardNext();
+		nextWav = normalized;
+	}
+
+	public synchronized boolean needsNextDecode() {
+		if (nextWav == null || nextClip != null || nextDecodeStarted || !shouldDecodeNextNow()) {
+			return false;
+		}
+		nextDecodeStarted = true;
+		return true;
+	}
+
+	/**
+	 * Decode a previously {@link #prepareNext(Path) prepared} WAV. Call from a
+	 * background thread so the client thread is not stalled.
+	 */
+	public void decodePreparedNext() {
+		Path path;
+		synchronized (this) {
+			path = nextWav;
+			if (path == null || nextClip != null) {
+				nextDecodeStarted = false;
+				return;
+			}
+		}
+
+		Clip decoded = null;
 		try {
-			nextClip = openClip(normalized);
-			nextWav = normalized;
-			applyVolumeTo(nextClip);
+			decoded = openClip(path);
 		} catch (Exception e) {
-			discardNext();
-			PocketWave.LOGGER.debug("Could not pre-open next clip for {}", wavFile, e);
+			PocketWave.LOGGER.debug("Could not pre-open next clip for {}", path, e);
+		}
+
+		synchronized (this) {
+			if (decoded != null && path.equals(nextWav) && nextClip == null) {
+				nextClip = decoded;
+				applyVolumeTo(nextClip);
+			} else {
+				closeClip(decoded);
+				if (path.equals(nextWav) && nextClip == null) {
+					nextWav = null;
+				}
+			}
+			nextDecodeStarted = false;
 		}
 	}
 
@@ -75,6 +118,7 @@ public final class AudioPlayer {
 		closeClip(nextClip);
 		nextClip = null;
 		nextWav = null;
+		nextDecodeStarted = false;
 	}
 
 	public synchronized void discardNextIf(Path wavFile) {
@@ -88,8 +132,8 @@ public final class AudioPlayer {
 
 	public synchronized void pause() {
 		if (clip != null && clip.isRunning()) {
-			clip.stop();
 			paused = true;
+			clip.stop();
 		}
 	}
 
@@ -129,15 +173,19 @@ public final class AudioPlayer {
 		clip = nextClip;
 		nextClip = null;
 		nextWav = null;
+		nextDecodeStarted = false;
 		applyVolumeTo(clip);
+		finished = false;
 		startPlayback();
 		paused = false;
 		return true;
 	}
 
 	private void stopInternal(boolean clearPaused) {
-		closeClip(clip);
+		finished = false;
+		Clip toClose = clip;
 		clip = null;
+		closeClip(toClose);
 
 		if (clearPaused) {
 			paused = false;
@@ -157,7 +205,7 @@ public final class AudioPlayer {
 		}
 	}
 
-	private static Clip openClip(Path wavFile) throws UnsupportedAudioFileException, IOException, LineUnavailableException {
+	private Clip openClip(Path wavFile) throws UnsupportedAudioFileException, IOException, LineUnavailableException {
 		try (AudioInputStream stream = AudioSystem.getAudioInputStream(wavFile.toFile())) {
 			AudioFormat format = stream.getFormat();
 			AudioInputStream playStream = stream;
@@ -177,8 +225,36 @@ public final class AudioPlayer {
 
 			Clip newClip = AudioSystem.getClip();
 			newClip.open(playStream);
+			newClip.addLineListener(this::onLineEvent);
 			return newClip;
 		}
+	}
+
+	private void onLineEvent(LineEvent event) {
+		if (event.getType() != LineEvent.Type.STOP) {
+			return;
+		}
+		synchronized (this) {
+			if (paused || looping || clip == null || event.getSource() != clip) {
+				return;
+			}
+			long length = clip.getFrameLength();
+			if (length > 0 && clip.getFramePosition() >= length - 1) {
+				finished = true;
+			}
+		}
+	}
+
+	private boolean shouldDecodeNextNow() {
+		if (looping) {
+			return false;
+		}
+		if (clip == null) {
+			return true;
+		}
+		float rate = clip.getFormat().getFrameRate();
+		long remaining = clip.getFrameLength() - clip.getFramePosition();
+		return rate <= 0 || remaining <= 0 || (remaining / rate) <= NEXT_DECODE_SECONDS;
 	}
 
 	public synchronized boolean isPlaying() {
@@ -200,14 +276,14 @@ public final class AudioPlayer {
 		if (clip == null || paused || looping) {
 			return false;
 		}
+		if (finished) {
+			return true;
+		}
 		if (clip.isRunning()) {
 			return false;
 		}
 		long length = clip.getFrameLength();
-		if (length <= 0) {
-			return false;
-		}
-		return clip.getFramePosition() >= length - 1;
+		return length > 0 && clip.getFramePosition() >= length - 1;
 	}
 
 	public synchronized boolean isLooping() {
@@ -222,6 +298,11 @@ public final class AudioPlayer {
 	public synchronized boolean setLooping(boolean looping) {
 		this.looping = looping;
 		applyLooping();
+		if (looping && nextClip != null) {
+			closeClip(nextClip);
+			nextClip = null;
+			nextDecodeStarted = false;
+		}
 		return this.looping;
 	}
 

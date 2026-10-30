@@ -6,7 +6,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 final class ProcessUtil {
 	private ProcessUtil() {
@@ -17,10 +16,19 @@ final class ProcessUtil {
 		builder.redirectErrorStream(true);
 		Process process = builder.start();
 
-		String output;
+		StringBuilder output = new StringBuilder();
 		try (BufferedReader reader = new BufferedReader(
-				new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-			output = reader.lines().collect(Collectors.joining("\n"));
+				new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8), 8192)) {
+			String line;
+			while ((line = reader.readLine()) != null) {
+				if (isProgressLine(line)) {
+					continue;
+				}
+				if (!output.isEmpty()) {
+					output.append('\n');
+				}
+				output.append(line);
+			}
 		}
 
 		boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
@@ -29,7 +37,11 @@ final class ProcessUtil {
 			throw new IOException("Command timed out: " + String.join(" ", command));
 		}
 
-		return new Result(process.exitValue(), output);
+		return new Result(process.exitValue(), output.toString());
+	}
+
+	private static boolean isProgressLine(String line) {
+		return line.startsWith("[download]") && line.indexOf('%') >= 0;
 	}
 
 	static boolean commandAvailable(String command) {

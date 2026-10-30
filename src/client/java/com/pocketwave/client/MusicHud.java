@@ -37,6 +37,13 @@ final class MusicHud {
 	private static final int STATUS_COLOR = 0xFFA8E6A0;
 	private static final int STATUS_DIM = 0xFF9A9A9A;
 
+	private static String cachedTitleSource;
+	private static String cachedLabel = "";
+	private static String cachedStatus = "";
+	private static boolean cachedPaused;
+	private static boolean cachedLooping;
+	private static int cachedQueued = -1;
+
 	private MusicHud() {
 	}
 
@@ -59,10 +66,19 @@ final class MusicHud {
 		boolean paused = music.isPaused();
 		boolean looping = music.isLooping();
 		int queued = music.queueSize();
-		String status = statusLine(paused, looping, queued);
+		String title = music.hudTitle();
+		if (cachedTitleSource == null || !cachedTitleSource.equals(title)
+				|| cachedPaused != paused || cachedLooping != looping || cachedQueued != queued) {
+			cachedTitleSource = title;
+			cachedPaused = paused;
+			cachedLooping = looping;
+			cachedQueued = queued;
+			cachedLabel = ellipsize(font, title, CONTENT_WIDTH);
+			cachedStatus = statusLine(paused, looping, queued);
+		}
+		String status = cachedStatus;
 		boolean showStatus = !status.isEmpty();
-
-		String label = ellipsize(font, music.hudTitle(), CONTENT_WIDTH);
+		String label = cachedLabel;
 
 		int x = MARGIN_X;
 		int y = MARGIN_Y;
@@ -141,14 +157,16 @@ final class MusicHud {
 			return ellipsis;
 		}
 
-		StringBuilder builder = new StringBuilder();
-		for (int i = 0; i < text.length(); i++) {
-			builder.append(text.charAt(i));
-			if (font.width(builder.toString()) > budget) {
-				builder.setLength(Math.max(0, builder.length() - 1));
-				break;
+		int low = 0;
+		int high = text.length();
+		while (low < high) {
+			int mid = (low + high + 1) / 2;
+			if (font.width(text.substring(0, mid)) <= budget) {
+				low = mid;
+			} else {
+				high = mid - 1;
 			}
 		}
-		return builder + ellipsis;
+		return text.substring(0, low) + ellipsis;
 	}
 }
