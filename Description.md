@@ -28,7 +28,7 @@ PocketWave has one simple feature: Allow the user to play music from YouTube or 
 >
 > /music playlist | Opens the playlist GUI
 >
-> /music playlist <name> | Play a saved playlist
+> /music playlist <playlist name> | Play a saved playlist
 >
 > /music settings | Opens settings (default volume, volume step, HUD)
 

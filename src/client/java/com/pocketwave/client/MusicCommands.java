@@ -1,14 +1,22 @@
 package com.pocketwave.client;
 
+import java.util.concurrent.CompletableFuture;
+
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
+import net.minecraft.commands.SharedSuggestionProvider;
 
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 
+import com.pocketwave.client.playlist.Playlist;
 import com.pocketwave.client.playlist.PlaylistScreens;
+import com.pocketwave.client.playlist.PlaylistStore;
 import com.pocketwave.client.settings.SettingsScreens;
 
 final class MusicCommands {
@@ -115,6 +123,7 @@ final class MusicCommands {
 						return 1;
 					})
 					.then(ClientCommands.argument("name", StringArgumentType.greedyString())
+							.suggests(MusicCommands::suggestPlaylists)
 							.executes(ctx -> {
 								String name = StringArgumentType.getString(ctx, "name");
 								MusicController.INSTANCE.playPlaylist(name);
@@ -123,5 +132,15 @@ final class MusicCommands {
 
 			dispatcher.register(root);
 		});
+	}
+
+	private static CompletableFuture<Suggestions> suggestPlaylists(
+			com.mojang.brigadier.context.CommandContext<FabricClientCommandSource> ctx,
+			SuggestionsBuilder builder
+	) {
+		return SharedSuggestionProvider.suggest(
+				PlaylistStore.INSTANCE.list().stream().map(Playlist::name),
+				builder
+		);
 	}
 }
