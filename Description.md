@@ -55,8 +55,8 @@ Explained by AI, since I don't understand
 **“YouTube blocked this request…”**  
 YouTube’s bot check rejected the download. Try again later, or use another link / a local file. This mod does not require Google login.
 
-**ffmpeg download failed**  
-Allow Minecraft network access, or install ffmpeg yourself (`brew install ffmpeg` on macOS) and restart the game.
+**ffmpeg download**  
+If ffmpeg isn’t already installed, PocketWave asks before downloading it (~20–30MB from GitHub into `pocketwave/bin`). You can also turn that on/off in `/music settings`, or install ffmpeg yourself (`brew install ffmpeg` on macOS).
 
 **Spotify links**  
 Not supported. Use YouTube, YouTube Music, SoundCloud, Bandcamp, direct audio URLs, or `/music local`.

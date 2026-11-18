@@ -9,7 +9,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
  * immediately dismiss a GUI opened from a {@code /music} command.
  */
 public final class ClientScreens {
-	private static Screen pending;
+	private static volatile Screen pending;
 
 	private ClientScreens() {
 	}

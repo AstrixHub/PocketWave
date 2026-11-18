@@ -27,6 +27,7 @@ public final class MusicSettings {
 	private int volumePercent = DEFAULT_VOLUME;
 	private int volumeStepPercent = DEFAULT_STEP;
 	private volatile boolean showHud = true;
+	private volatile boolean allowFfmpegDownload;
 	private volatile boolean loaded;
 
 	private MusicSettings() {
@@ -51,6 +52,11 @@ public final class MusicSettings {
 		return showHud;
 	}
 
+	public boolean allowFfmpegDownload() {
+		ensureLoaded();
+		return allowFfmpegDownload;
+	}
+
 	public synchronized void setVolumePercent(int percent) {
 		ensureLoaded();
 		volumePercent = clamp(percent, 0, 100);
@@ -66,6 +72,12 @@ public final class MusicSettings {
 	public synchronized void setShowHud(boolean showHud) {
 		ensureLoaded();
 		this.showHud = showHud;
+		save();
+	}
+
+	public synchronized void setAllowFfmpegDownload(boolean allow) {
+		ensureLoaded();
+		this.allowFfmpegDownload = allow;
 		save();
 	}
 
@@ -100,6 +112,7 @@ public final class MusicSettings {
 				volumeStepPercent = clamp(format.volumeStepPercent, 1, 25);
 			}
 			showHud = format.showHud == null || format.showHud;
+			allowFfmpegDownload = format.allowFfmpegDownload != null && format.allowFfmpegDownload;
 		} catch (IOException | JsonSyntaxException e) {
 			PocketWave.LOGGER.warn("Could not read settings.json", e);
 		}
@@ -114,6 +127,7 @@ public final class MusicSettings {
 		format.volumePercent = volumePercent;
 		format.volumeStepPercent = volumeStepPercent;
 		format.showHud = showHud;
+		format.allowFfmpegDownload = allowFfmpegDownload;
 		Path tmp = file.resolveSibling("settings.json.tmp");
 		try {
 			Files.createDirectories(file.getParent());
@@ -149,5 +163,6 @@ public final class MusicSettings {
 		Integer volumePercent;
 		Integer volumeStepPercent;
 		Boolean showHud;
+		Boolean allowFfmpegDownload;
 	}
 }

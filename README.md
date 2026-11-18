@@ -7,10 +7,10 @@ Only you hear the music — it works in singleplayer and on multiplayer servers 
 ## Requirements
 
 - Minecraft **1.21.11**
-- Fabric Loader **0.19.5+**
+- Fabric Loader **0.20.1+**
 - [Fabric API](https://modrinth.com/mod/fabric-api) for 1.21.11
 - Java **21+** (for building)
-- Internet on first play if `ffmpeg` is not already installed (one-time ~20–30MB download)
+- Internet on first play if `ffmpeg` is not already installed (optional one-time ~20–30MB download — you must approve it)
 
 **You do not need to install yt-dlp yourself.** A copy for Windows, macOS, and Linux is bundled in the mod (kept under 100MB total). If `yt-dlp` / `ffmpeg` are already on your `PATH`, those are used instead.
 
@@ -20,7 +20,7 @@ Only you hear the music — it works in singleplayer and on multiplayer servers 
 ./gradlew build
 ```
 
-The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.1.0.jar` and must stay under **100MB**.
+The first build downloads yt-dlp binaries (network required). The mod JAR is written to `build/libs/pocketwave-1.1.1.jar` and must stay under **100MB**.
 
 ## Commands
 
@@ -72,7 +72,7 @@ Open **Options → Controls → PocketWave**. All are **unbound by default**:
 
 ## Settings
 
-`/music settings` opens a small menu for **default volume** (remembered the next time you play a song, and also saved when you use volume up/down), **how much** `/music volup` and `/music voldown` change, and whether the now-playing HUD is shown. Saved to `<game dir>/pocketwave/settings.json`.
+`/music settings` opens a small menu for **default volume** (remembered the next time you play a song, and also saved when you use volume up/down), **how much** `/music volup` and `/music voldown` change, and whether the now-playing HUD is shown, and whether PocketWave may download ffmpeg. Saved to `<game dir>/pocketwave/settings.json`.
 
 ## HUD
 
@@ -83,7 +83,7 @@ While a track is playing or paused (or loading), a small widget appears in the *
 1. Bundled (or system) `yt-dlp` downloads the best audio stream (no cookies / login by default).
 2. `ffmpeg` converts it to a temporary WAV under `.minecraft/pocketwave/cache/` (deleted when the track finishes or is discarded — not kept permanently).
 3. Queued songs **preload** in the background so the next track can start with little/no gap.
-4. If `ffmpeg` is not on your PATH, the mod downloads it once into `<game dir>/pocketwave/bin/` (for vanilla that’s `.minecraft/pocketwave/bin/ffmpeg`; launcher instances use their own instance folder). That copy is reused after the first successful download.
+4. If `ffmpeg` is not on your PATH, the mod asks before downloading it once into `<game dir>/pocketwave/bin/` (for vanilla that’s `.minecraft/pocketwave/bin/ffmpeg`; launcher instances use their own instance folder). Nothing is downloaded until you say yes (or enable it in `/music settings`). That copy is reused after the first successful download.
 5. Java Sound plays the WAV (separate from Minecraft’s volume sliders).
 
 ## Troubleshooting
@@ -91,8 +91,8 @@ While a track is playing or paused (or loading), a small widget appears in the *
 **“YouTube blocked this request…”**  
 YouTube’s bot check rejected the download. Try again later, or use another link / a local file. This mod does not require Google login.
 
-**ffmpeg download failed**  
-Allow Minecraft network access, or install ffmpeg yourself (`brew install ffmpeg` on macOS) and restart the game.
+**ffmpeg download failed / declined**  
+Approve the prompt (or enable “Allow ffmpeg download” in `/music settings`), allow Minecraft network access, or install ffmpeg yourself (`brew install ffmpeg` on macOS) and restart the game.
 
 **Spotify links**  
 Not supported. Use YouTube, YouTube Music, SoundCloud, Bandcamp, direct audio URLs, or `/music local`.
