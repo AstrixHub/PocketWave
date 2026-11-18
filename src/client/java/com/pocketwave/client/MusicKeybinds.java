@@ -28,43 +28,43 @@ final class MusicKeybinds {
 		// Unbound by default (UNKNOWN / -1).
 		pauseResume = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.pause_resume",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
 		volumeUp = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.volume_up",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
 		volumeDown = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.volume_down",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
 		stop = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.stop",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
 		loop = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.loop",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
 		showQueue = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.show_queue",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));
 		openPlaylists = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.pocketwave.open_playlists",
-				InputConstants.Type.KEYSYM,
+				InputConstants.Type.KEYBOARD,
 				InputConstants.UNKNOWN.getValue(),
 				category
 		));

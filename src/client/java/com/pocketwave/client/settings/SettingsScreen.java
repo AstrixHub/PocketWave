@@ -22,8 +22,8 @@ final class SettingsScreen extends Screen {
 
 	@Override
 	protected void init() {
-		this.panelW = Math.min(320, Math.max(280, this.width - 48));
-		this.panelH = 148;
+		this.panelW = Math.min(340, Math.max(300, this.width - 48));
+		this.panelH = 178;
 		this.panelLeft = (this.width - this.panelW) / 2;
 		this.panelTop = (this.height - this.panelH) / 2;
 
@@ -44,6 +44,12 @@ final class SettingsScreen extends Screen {
 				.pos(x, y)
 				.selected(settings.showHud())
 				.onValueChange((checkbox, selected) -> settings.setShowHud(selected))
+				.build());
+		y += 24;
+		addRenderableWidget(Checkbox.builder(Component.literal("Allow ffmpeg download (~25MB)"), this.font)
+				.pos(x, y)
+				.selected(settings.allowFfmpegDownload())
+				.onValueChange((checkbox, selected) -> settings.setAllowFfmpegDownload(selected))
 				.build());
 
 		addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())

@@ -49,6 +49,10 @@ public final class ChatFeedback {
 			return "Bundled yt-dlp is missing from the mod jar. Rebuild with network access.";
 		}
 
+		if (lower.contains("ffmpeg download declined") || lower.contains("allow it in /music settings")) {
+			return "ffmpeg download was declined. Say yes when asked, enable it in /music settings, or install ffmpeg yourself.";
+		}
+
 		if (lower.contains("failed to download ffmpeg")) {
 			return "Could not download ffmpeg. Check your internet, or install ffmpeg on your PATH.";
 		}
@@ -60,7 +64,7 @@ public final class ChatFeedback {
 
 		if (lower.contains("ffmpeg") && (lower.contains("not found") || lower.contains("no such file")
 				|| lower.contains("cannot find"))) {
-			return "ffmpeg was not found. Allow the one-time download, or install ffmpeg on your PATH.";
+			return "ffmpeg was not found. Allow the download when prompted, enable it in /music settings, or install ffmpeg on your PATH.";
 		}
 
 		if (lower.contains("spotify")) {

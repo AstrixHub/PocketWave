@@ -1,3 +1,10 @@
+# **PocketWave 1.0.5!**
+
+## Updates
+
+- This build targets Minecraft 26.3 (Fabric Loader 0.20.1+)
+- Asks before downloading ffmpeg (and you can turn that permission on/off in `/music settings`)
+
 # **PocketWave 1.0.4!**
 
 ## Updates
