@@ -87,6 +87,12 @@ public final class ExternalTools {
 				return cachedFfmpeg;
 			}
 
+			if (!FfmpegConsent.ensureAllowed()) {
+				throw new IOException(
+						"ffmpeg download declined. Allow it in /music settings, or install ffmpeg on your PATH."
+				);
+			}
+
 			if (status != null) {
 				status.accept("Downloading ffmpeg (one-time, ~20–30MB)...");
 			}

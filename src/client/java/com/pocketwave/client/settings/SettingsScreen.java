@@ -9,6 +9,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 import com.pocketwave.client.MusicController;
+import com.pocketwave.client.onboarding.OnboardingManager;
 
 final class SettingsScreen extends Screen {
 	private int panelW;
@@ -22,8 +23,8 @@ final class SettingsScreen extends Screen {
 
 	@Override
 	protected void init() {
-		this.panelW = Math.min(320, Math.max(280, this.width - 48));
-		this.panelH = 148;
+		this.panelW = Math.min(340, Math.max(300, this.width - 48));
+		this.panelH = 210;
 		this.panelLeft = (this.width - this.panelW) / 2;
 		this.panelTop = (this.height - this.panelH) / 2;
 
@@ -44,6 +45,17 @@ final class SettingsScreen extends Screen {
 				.pos(x, y)
 				.selected(settings.showHud())
 				.onValueChange((checkbox, selected) -> settings.setShowHud(selected))
+				.build());
+		y += 24;
+		addRenderableWidget(Checkbox.builder(Component.literal("Allow ffmpeg download (~25MB)"), this.font)
+				.pos(x, y)
+				.selected(settings.allowFfmpegDownload())
+				.onValueChange((checkbox, selected) -> settings.setAllowFfmpegDownload(selected))
+				.build());
+		y += 26;
+		addRenderableWidget(Button.builder(Component.literal("Setup guide"), button ->
+						OnboardingManager.startOnboarding(this))
+				.bounds(x, y, inner, 20)
 				.build());
 
 		addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())

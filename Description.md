@@ -49,11 +49,18 @@ Unbound by default
 
 ### Settings:
 
-`/music settings` lets you set the default volume (next song starts at that level), how much volup/voldown changes, and whether the now-playing HUD shows.
+`/music settings` lets you set the default volume (next song starts at that level), how much volup/voldown changes, whether the now-playing HUD shows, and whether PocketWave may download ffmpeg. There’s also a **Setup guide** button that walks you through how PocketWave works (same guide that opens the first time you join a world).
 
 ### HUD:
 
 While a track is playing or paused (Or loading), a small widget appears in the **top-left** - Song title and a thin volume bar. Stays out of the crosshair/hotbar area and hides with the rest of the HUD (F1).
+
+### How it works:
+
+1. PocketWave grabs the audio (yt-dlp is built in — no login needed)
+2. It converts that into a temporary file, then plays it
+3. Queued / playlist songs preload so the next one starts quicker
+4. If ffmpeg isn’t already on your computer, PocketWave asks before downloading it once
 
 ## **Disclaimer:**
 
@@ -73,8 +80,8 @@ Explained by AI, since I don't understand
 **“YouTube blocked this request…”**  
 YouTube’s bot check rejected the download. Try again later, or use another link / a local file. This mod does not require Google login.
 
-**ffmpeg download failed**  
-Allow Minecraft network access, or install ffmpeg yourself (`brew install ffmpeg` on macOS) and restart the game.
+**ffmpeg download**  
+If ffmpeg isn’t already installed, PocketWave asks before downloading it. It’s a small helper (~20–30 MB — not a big file) from GitHub into `pocketwave/bin`. You can also turn that on/off in `/music settings`, say yes/no in the setup guide, or install ffmpeg yourself (`brew install ffmpeg` on macOS).
 
 **Spotify links**  
 Not supported. Use YouTube, YouTube Music, SoundCloud, Bandcamp, direct audio URLs, or `/music local`.

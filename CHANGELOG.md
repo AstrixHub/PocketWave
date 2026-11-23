@@ -2,6 +2,8 @@
 
 ## Updates
 
+- First-time setup guide (like Simple Voice Chat) explains what PocketWave does and how to use it — reopen anytime from `/music settings` → Setup guide
+- Asks before downloading ffmpeg (small helper, about 20–30 MB) and you can turn that permission on/off in `/music settings`
 - Searching a song is less likely to grab a random video that doesn’t match what you typed
 - Runs a bit lighter while music is playing (less extra memory, and the HUD does less work)
 - `/music playlist` now suggests your playlist names while you type
