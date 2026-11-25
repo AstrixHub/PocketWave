@@ -53,7 +53,15 @@ public final class ChatFeedback {
 			return "ffmpeg download was declined. Say yes when asked, enable it in /music settings, or install ffmpeg yourself.";
 		}
 
-		if (lower.contains("failed to download ffmpeg")) {
+		if (lower.contains("integrity check failed")) {
+			return "A helper tool failed its safety check. Delete the pocketwave/bin folder and try again, or install yt-dlp/ffmpeg yourself.";
+		}
+
+		if (lower.contains("only http:// and https://")) {
+			return "Only http:// and https:// links are supported.";
+		}
+
+		if (lower.contains("failed to download ffmpeg") || lower.contains("download exceeded")) {
 			return "Could not download ffmpeg. Check your internet, or install ffmpeg on your PATH.";
 		}
 
