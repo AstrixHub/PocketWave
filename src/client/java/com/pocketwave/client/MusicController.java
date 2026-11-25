@@ -141,17 +141,15 @@ public final class MusicController {
 			return;
 		}
 
-		QueuedItem item;
 		synchronized (queue) {
 			if (queue.size() >= MAX_QUEUE) {
 				ChatFeedback.error("Queue is full (" + MAX_QUEUE + ").");
 				return;
 			}
-			item = new QueuedItem(QueuedItem.Kind.QUERY, trimmed);
-			queue.addLast(item);
+			queue.addLast(new QueuedItem(QueuedItem.Kind.QUERY, trimmed));
 			ChatFeedback.info("Queued (#" + queue.size() + "): " + trimmed);
 		}
-		startPreload(item);
+		preloadQueueAhead();
 	}
 
 	public void showQueue() {
@@ -215,6 +213,7 @@ public final class MusicController {
 		}
 		if (next != null) {
 			setCurrentSource(next.kind(), next.value());
+			preloadQueueAhead();
 			YtDlpService.PreparedTrack ready = next.takePrepared();
 			if (ready != null) {
 				ChatFeedback.info("Playing next: " + ready.title());
@@ -226,6 +225,26 @@ public final class MusicController {
 		}
 
 		return playNextFromPlaylist();
+	}
+
+	/** Only fetch/convert the next few queued songs — same idea as playlist preload. */
+	private void preloadQueueAhead() {
+		List<QueuedItem> toStart = new ArrayList<>();
+		synchronized (queue) {
+			int i = 0;
+			for (QueuedItem item : queue) {
+				if (i >= PRELOAD_AHEAD) {
+					break;
+				}
+				if (item.canStartPreload()) {
+					toStart.add(item);
+				}
+				i++;
+			}
+		}
+		for (QueuedItem item : toStart) {
+			startPreload(item);
+		}
 	}
 
 	private boolean playNextFromPlaylist() {
@@ -400,6 +419,9 @@ public final class MusicController {
 	}
 
 	private void startPreload(QueuedItem item) {
+		if (!item.markPreloadStarted()) {
+			return;
+		}
 		item.preloadFuture = preloadExecutor.submit(() -> {
 			try {
 				YtDlpService.PreparedTrack track = switch (item.kind()) {
@@ -706,6 +728,7 @@ public final class MusicController {
 		private YtDlpService.PreparedTrack prepared;
 		private String error;
 		private boolean done;
+		private boolean preloadStarted;
 
 		QueuedItem(Kind kind, String value) {
 			this.kind = kind;
@@ -720,6 +743,23 @@ public final class MusicController {
 			return value;
 		}
 
+		boolean canStartPreload() {
+			synchronized (lock) {
+				return !preloadStarted && !done;
+			}
+		}
+
+		/** Returns false if preload already started or finished. */
+		boolean markPreloadStarted() {
+			synchronized (lock) {
+				if (preloadStarted || done) {
+					return false;
+				}
+				preloadStarted = true;
+				return true;
+			}
+		}
+
 		boolean matches(PlaylistSong song) {
 			return kindOf(song) == kind && song.value().equals(value);
 		}
@@ -732,7 +772,7 @@ public final class MusicController {
 				if (error != null) {
 					return value + " (failed)";
 				}
-				if (preloadFuture != null && !done) {
+				if (preloadStarted && !done) {
 					return value + " (loading)";
 				}
 				return value;
@@ -774,7 +814,7 @@ public final class MusicController {
 		 */
 		YtDlpService.PreparedTrack awaitOrFetch(YtDlpService ytDlp, LocalFileService localFiles) throws Exception {
 			synchronized (lock) {
-				while (!done && preloadFuture != null) {
+				while (!done && preloadStarted) {
 					lock.wait(200);
 				}
 				if (prepared != null) {

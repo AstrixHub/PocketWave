@@ -2,6 +2,7 @@
 
 PocketWave is a Minecraft mod created to allow players to play music from YouTube, YouTube Music, and other supported sites*, anywhere, anytime!
 
+Please read everything if possible.
 ## **Features:**
 
 PocketWave has one simple feature: Allow the user to play music from YouTube or YouTube Music whenever they want. You can also make playlists, queue songs, and change a few settings.
@@ -51,6 +52,10 @@ Unbound by default
 
 `/music settings` lets you set the default volume (next song starts at that level), how much volup/voldown changes, whether the now-playing HUD shows, and whether PocketWave may download ffmpeg. There’s also a **Setup guide** button that walks you through how PocketWave works (same guide that opens the first time you join a world).
 
+### Setup Guide:
+
+PocketWave's Setup Guide will walk you through how PocketWave works, the commands available, and explain everything in simple terms. All you need to get started playing music is here!
+
 ### HUD:
 
 While a track is playing or paused (Or loading), a small widget appears in the **top-left** - Song title and a thin volume bar. Stays out of the crosshair/hotbar area and hides with the rest of the HUD (F1).
@@ -68,6 +73,8 @@ PocketWave was made and is maintained using artificial intelligence. As much as 
 
 ## **Important links:**
 
+> My Modrinth profile page: [Nyx-Modrinth](https://modrinth.com/user/nyxfall)
+>
 > My YouTube channel: [NyxFall](https://www.youtube.com/@nyxfallmc)
 > 
 > My Discord (For support and more): [NyxFall's Nighthold](https://discord.gg/2NnM5hWws2)

@@ -43,18 +43,47 @@ tasks.register("downloadNatives") {
 		def ytDir = new File(out, "yt-dlp")
 		ytDir.mkdirs()
 
+		// SHA-256 of the uncompressed GitHub release binaries (from yt-dlp SHA2-256SUMS).
 		def downloads = [
-				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp.exe", new File(ytDir, "windows-x64.exe.gz")],
-				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp_linux", new File(ytDir, "linux-x64.gz")],
-				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp_macos", new File(ytDir, "macos.gz")]
+				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp.exe", new File(ytDir, "windows-x64.exe.gz"), "66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a"],
+				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp_linux", new File(ytDir, "linux-x64.gz"), "58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a"],
+				["https://github.com/yt-dlp/yt-dlp/releases/download/${ytDlpRelease}/yt-dlp_macos", new File(ytDir, "macos.gz"), "0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202"]
 		]
+
+		def sha256Of = { File file ->
+			def digest = java.security.MessageDigest.getInstance("SHA-256")
+			file.withInputStream { input ->
+				def buf = new byte[8192]
+				int n
+				while ((n = input.read(buf)) >= 0) {
+					digest.update(buf, 0, n)
+				}
+			}
+			digest.digest().collect { String.format("%02x", it) }.join("")
+		}
 
 		downloads.each { entry ->
 			def url = entry[0] as String
 			def dest = entry[1] as File
+			def expectedSha = entry[2] as String
+
 			if (dest.exists() && dest.length() > 1_000_000) {
-				logger.lifecycle("Reusing cached native: ${dest.name}")
-				return
+				def checkRaw = File.createTempFile("smp-native-check-", ".bin")
+				try {
+					dest.withInputStream { input ->
+						def gzip = new java.util.zip.GZIPInputStream(input)
+						checkRaw.withOutputStream { output -> output << gzip }
+					}
+					def actual = sha256Of(checkRaw)
+					if (actual.equalsIgnoreCase(expectedSha)) {
+						logger.lifecycle("Reusing cached native: ${dest.name}")
+						return
+					}
+					logger.lifecycle("Cached native hash mismatch for ${dest.name}; re-downloading")
+					dest.delete()
+				} finally {
+					checkRaw.delete()
+				}
 			}
 
 			logger.lifecycle("Downloading ${url}")
@@ -63,6 +92,11 @@ tasks.register("downloadNatives") {
 			try {
 				URI.create(url).toURL().withInputStream { input ->
 					tmpRaw.withOutputStream { output -> output << input }
+				}
+
+				def actual = sha256Of(tmpRaw)
+				if (!actual.equalsIgnoreCase(expectedSha)) {
+					throw new GradleException("yt-dlp integrity check failed for ${url}: expected ${expectedSha}, got ${actual}")
 				}
 
 				tmpRaw.withInputStream { input ->
