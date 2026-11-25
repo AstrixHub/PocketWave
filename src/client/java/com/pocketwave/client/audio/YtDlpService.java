@@ -45,9 +45,10 @@ public final class YtDlpService {
 		downloadCmd.add("after_move:title");
 		downloadCmd.add("--print");
 		downloadCmd.add("after_move:filepath");
+		downloadCmd.add("--");
 		downloadCmd.add(input);
 
-		PocketWave.LOGGER.info("Running yt-dlp for: {}", input);
+		PocketWave.LOGGER.info("Running yt-dlp for: {}", summarizeForLog(input));
 		ProcessUtil.Result download = ProcessUtil.run(downloadCmd, 180);
 
 		if (download.exitCode() != 0) {
@@ -117,17 +118,25 @@ public final class YtDlpService {
 		String trimmed = queryOrUrl.trim();
 		String lower = trimmed.toLowerCase(Locale.ROOT);
 
-		if (lower.startsWith("http://") || lower.startsWith("https://")
-				|| lower.startsWith("ytsearch") || lower.contains("://")) {
+		if (lower.startsWith("https://") || lower.startsWith("http://")) {
 			return trimmed;
 		}
+		if (lower.contains("://")) {
+			throw new IOException("Only http:// and https:// links are supported.");
+		}
 
-		String matched = pickSearchResult(ytDlp, trimmed);
+		// Option-like tokens must never reach yt-dlp as a raw URL; treat as search.
+		String searchQuery = sanitizeQuery(trimmed);
+		if (searchQuery.isEmpty()) {
+			throw new IOException("Empty search query.");
+		}
+
+		String matched = pickSearchResult(ytDlp, searchQuery);
 		if (matched != null) {
 			return matched;
 		}
 
-		return "ytsearch1:" + sanitizeQuery(trimmed);
+		return "ytsearch1:" + searchQuery;
 	}
 
 	/**
@@ -167,6 +176,7 @@ public final class YtDlpService {
 		cmd.add("--no-playlist");
 		cmd.add("--print");
 		cmd.add("%(id)s\t%(title)s\t%(duration)s");
+		cmd.add("--");
 		cmd.add(search);
 
 		ProcessUtil.Result result = ProcessUtil.run(cmd, 60);
@@ -200,6 +210,16 @@ public final class YtDlpService {
 
 	private static String sanitizeQuery(String query) {
 		return query.replace('"', ' ').replace('\n', ' ').replace('\r', ' ').trim();
+	}
+
+	private static String summarizeForLog(String input) {
+		if (input == null) {
+			return "";
+		}
+		if (input.length() <= 80) {
+			return input;
+		}
+		return input.substring(0, 77) + "...";
 	}
 
 	private record SearchHit(String id, String title, int durationSeconds) {
